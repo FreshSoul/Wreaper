@@ -5,7 +5,7 @@ a = Analysis(
     ['wreaper.py'],
     pathex=[],
     binaries=[],
-    datas=[('test.jpg', '.'), ('WwiseLogo.png', '.'), ('reaperLogo.jpg', '.')],
+    datas=[('WwiseLogo.png', '.'), ('reaperLogo.jpg', '.'), ('test.jpg', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['test.jpg'],
 )

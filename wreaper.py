@@ -23,6 +23,8 @@ APP_VERSION = "1.0.0"  # 当前本地版本号
 UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/build/wreaper.exe"
 VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
 
+
+
 def get_remote_version():
     try:
         resp = requests.get(VERSION_FILE_URL, timeout=5)
