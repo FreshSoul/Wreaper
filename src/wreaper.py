@@ -20,7 +20,7 @@ import requests
 CONFIG_FILE = 'reaperconfig.txt'
 
 APP_VERSION = "1.0.0"  
-UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/src/build/wreaper.exe"
+UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/src/dist/wreaper/wreaper.exe"
 VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
 
 
