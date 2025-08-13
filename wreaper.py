@@ -12,11 +12,66 @@ from tkinter import filedialog
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
                             QMessageBox, QLabel, QHBoxLayout
                             )
-from PyQt5.QtGui import QPixmap, QFont, QIcon, QPalette, QBrush
-from PyQt5.QtCore import Qt, QSize,QProcess
+from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush
+from PyQt5.QtCore import Qt
 from waapi import WaapiClient,CannotConnectToWaapiException
+import requests
 
 CONFIG_FILE = 'reaperconfig.txt'
+
+APP_VERSION = "1.0.0"  # 当前本地版本号
+
+def get_remote_version():
+    url = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
+    try:
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            return resp.text.strip()
+    except Exception as e:
+        print("检查更新失败：", e)
+    return None
+
+def is_new_version(local_version, remote_version):
+    return local_version != remote_version
+
+def download_new_version():
+    url = "https://github.com/FreshSoul/Wreaper/raw/main/wreaper.exe"
+    save_path = "wreaper_new.exe"
+    try:
+        resp = requests.get(url, stream=True)
+        with open(save_path, 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return True
+    except Exception as e:
+        print("下载新版本失败：", e)
+        return False
+
+def replace_and_restart():
+    bat_content = """
+    timeout /t 2
+    del wreaper.exe
+    rename wreaper_new.exe wreaper.exe
+    start wreaper.exe
+    """
+    with open("update.bat", "w") as f:
+        f.write(bat_content)
+    os.startfile("update.bat")
+    sys.exit()
+
+def check_update_and_prompt():
+    local_version = APP_VERSION
+    remote_version = get_remote_version()
+    if remote_version and is_new_version(local_version, remote_version):
+        reply = QMessageBox.question(None, "发现新版本", f"检测到新版本 {remote_version}，是否下载并更新？", QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            if download_new_version():
+                QMessageBox.information(None, "下载完成", "新版本已下载，程序将自动重启完成更新。")
+                replace_and_restart()
+            else:
+                QMessageBox.warning(None, "下载失败", "新版本下载失败，请检查网络。")
+
+
 
 class Wreaper(QWidget):
 
@@ -207,6 +262,7 @@ class Wreaper(QWidget):
 #后端逻辑
 
 
+
     def get_selected_audio_files(self):
         try:
             with WaapiClient() as client:
@@ -375,6 +431,7 @@ class Wreaper(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     try:
+        check_update_and_prompt()
         window = Wreaper()
         window.show()
         sys.exit(app.exec_())
