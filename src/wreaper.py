@@ -19,7 +19,7 @@ import requests
 
 CONFIG_FILE = 'reaperconfig.txt'
 
-APP_VERSION = "1.0.2"  
+APP_VERSION = "1.0.3"  
 UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/src/dist/wreaper/wreaper.exe"
 VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
 
@@ -360,7 +360,10 @@ class Wreaper(QWidget):
             self.setAutoFillBackground(True)
 
     def resizeEvent(self, event):
-        self.set_background_image("test.jpg")
+        bg_path = self.settings.value("bg_image_path", "test.jpg")
+        if not os.path.exists(bg_path):
+            bg_path = "test.jpg"
+        self.set_background_image(bg_path)
         super().resizeEvent(event)
 
     def safe_wwis_operation(self, func, *args, **kwargs):
