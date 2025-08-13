@@ -10,7 +10,8 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
-                            QMessageBox, QLabel, QHBoxLayout,QProgressDialog
+                            QMessageBox, QLabel, QHBoxLayout, QProgressDialog,
+                            QTabWidget, QFormLayout, QSpacerItem, QSizePolicy
                             )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush
 from PyQt5.QtCore import Qt,QThread, pyqtSignal, QTimer,QSettings
@@ -19,7 +20,7 @@ import requests
 
 CONFIG_FILE = 'reaperconfig.txt'
 
-APP_VERSION = "1.0.3"  
+APP_VERSION = "1.0.4"  
 UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/src/dist/wreaper/wreaper.exe"
 VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
 
@@ -140,7 +141,7 @@ class Wreaper(QWidget):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
-
+        
         # 顶部标题区域
         title_layout = QHBoxLayout()
 
@@ -192,7 +193,7 @@ class Wreaper(QWidget):
         main_layout.addLayout(button_layout)
 
         self.button_update = self.create_anime_button("检查更新", "#000000", "#5E9DD1")
-        self.button_update.clicked.connect(self.check_update_and_prompt_async)
+        self.button_update.clicked.connect(lambda: self.check_update_and_prompt_async(manual=True))
         button_layout.addWidget(self.button_update)
         
         # 按钮5 - 更换背景图
@@ -205,6 +206,10 @@ class Wreaper(QWidget):
         self.status_label.setStyleSheet("color: #000000; font-style: italic;")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
+# 版本号标签（右下角）
+        self.version_label = QLabel(f"v{APP_VERSION}")
+        self.version_label.setStyleSheet("color: #000000; font-style: italic;")
+        status_layout.addWidget(self.version_label)
 
         # 小图标
         anime_icon = QLabel()
@@ -300,18 +305,19 @@ class Wreaper(QWidget):
             # 用 QSettings 保存
             self.settings.setValue("bg_image_path", file_path)
 
-    def check_update_and_prompt_async(self):
-            remote_version = get_remote_version()
-            if remote_version and is_new_version(APP_VERSION, remote_version):
-                reply = QMessageBox.question(self, "发现新版本",
-                                            f"检测到新版本 {remote_version}，是否下载并更新？",
-                                            QMessageBox.Yes | QMessageBox.No)
-                if reply == QMessageBox.Yes:
-                    self.start_download_update()
-            elif remote_version :
-                QMessageBox.information(self, "已是最新版本", f"当前已是最新版本 {APP_VERSION}")
-            else:
-                QMessageBox.warning(self, "检查失败", "无法获取远程版本信息，请检查网络连接。")
+    def check_update_and_prompt_async(self, manual=False):
+        remote_version = get_remote_version()
+        if remote_version and is_new_version(APP_VERSION, remote_version):
+            reply = QMessageBox.question(self, "发现新版本",
+                                        f"检测到新版本 {remote_version}，是否下载并更新？",
+                                        QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.start_download_update()
+        elif remote_version:
+            if manual:
+                QMessageBox.information(self, "已是最新版本", f"当前已是最新版本（{APP_VERSION}）")
+        else:
+            QMessageBox.warning(self, "检查失败", "无法获取远程版本信息，请检查网络连接。")
        
 
     def start_download_update(self):
@@ -391,9 +397,10 @@ class Wreaper(QWidget):
             with WaapiClient() as client:
                 result = client.call("ak.wwise.ui.getSelectedObjects", options={'return': ['originalFilePath', 'music:playlistRoot']})
                 return [obj.get("originalFilePath") for obj in result.get("objects", []) if obj.get("originalFilePath")]
+        except CannotConnectToWaapiException as e:
+            raise RuntimeError("无法连接到Wwise，请确保Wwise正在运行。") from e
         except Exception as e:
-            QMessageBox.warning(self, "错误", f"无法连接到Wwise: {str(e)}")
-            return []
+            raise RuntimeError(f"获取Wwise选中对象失败: {e}") from e
 
     def get_default_reaper_path(self):
         if os.path.exists(CONFIG_FILE):
