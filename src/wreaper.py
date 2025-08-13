@@ -13,13 +13,13 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
                             QMessageBox, QLabel, QHBoxLayout,QProgressDialog
                             )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush
-from PyQt5.QtCore import Qt,QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt,QThread, pyqtSignal, QTimer,QSettings
 from waapi import WaapiClient,CannotConnectToWaapiException
 import requests
 
 CONFIG_FILE = 'reaperconfig.txt'
 
-APP_VERSION = "1.0.1"  
+APP_VERSION = "1.0.2"  
 UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/src/dist/wreaper/wreaper.exe"
 VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
 
@@ -123,15 +123,19 @@ class Wreaper(QWidget):
 #前端
     def __init__(self):
         super().__init__()
+        self.settings = QSettings("Wreaper", "WreaperApp")
         self.wwise_client = None
         self.download_thread = None
         self.progress_dialog = None
         self.initUI()
-        # 窗口显示后再检查（避免构造期弹框）
         QTimer.singleShot(300, self.check_update_and_prompt_async)
 
     def initUI(self):
-        self.set_background_image("test.jpg")
+        # 优先加载用户自定义背景
+        bg_path = self.settings.value("bg_image_path", "test.jpg")
+        if not os.path.exists(bg_path):
+            bg_path = "test.jpg"
+        self.set_background_image(bg_path)
         # 主布局
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -190,6 +194,11 @@ class Wreaper(QWidget):
         self.button_update = self.create_anime_button("检查更新", "#000000", "#5E9DD1")
         self.button_update.clicked.connect(self.check_update_and_prompt_async)
         button_layout.addWidget(self.button_update)
+        
+        # 按钮5 - 更换背景图
+        self.button_bg = self.create_anime_button("更换背景图", "#000000", "#5E9DD1")
+        self.button_bg.clicked.connect(self.change_background_image)
+        button_layout.addWidget(self.button_bg)
         # 底部状态区域
         status_layout = QHBoxLayout()
         self.status_label = QLabel("蓝莓派出品")
@@ -278,6 +287,19 @@ class Wreaper(QWidget):
         b = int(hex_color[4:6], 16)
         return f"{r}, {g}, {b}"
 
+
+    def change_background_image(self):
+        root = tk.Tk()
+        root.withdraw()
+        file_path = filedialog.askopenfilename(
+            title="选择背景图片",
+            filetypes=[("图片文件", "*.jpg *.png *.jpeg *.bmp *.gif")]
+        )
+        if file_path:
+            self.set_background_image(file_path)
+            # 用 QSettings 保存
+            self.settings.setValue("bg_image_path", file_path)
+
     def check_update_and_prompt_async(self):
             remote_version = get_remote_version()
             if remote_version and is_new_version(APP_VERSION, remote_version):
@@ -286,7 +308,11 @@ class Wreaper(QWidget):
                                             QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
                     self.start_download_update()
-            # 可根据需要 else: print("无新版本 / 检测失败")
+            elif remote_version :
+                QMessageBox.information(self, "已是最新版本", f"当前已是最新版本 {APP_VERSION}")
+            else:
+                QMessageBox.warning(self, "检查失败", "无法获取远程版本信息，请检查网络连接。")
+       
 
     def start_download_update(self):
         if self.download_thread and self.download_thread.isRunning():
