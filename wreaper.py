@@ -10,21 +10,22 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
-                            QMessageBox, QLabel, QHBoxLayout
+                            QMessageBox, QLabel, QHBoxLayout,QProgressDialog
                             )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt,QThread, pyqtSignal, QTimer
 from waapi import WaapiClient,CannotConnectToWaapiException
 import requests
 
 CONFIG_FILE = 'reaperconfig.txt'
 
 APP_VERSION = "1.0.0"  # 当前本地版本号
+UPDATE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/build/wreaper.exe"
+VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
 
 def get_remote_version():
-    url = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/version.txt"
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(VERSION_FILE_URL, timeout=5)
         if resp.status_code == 200:
             return resp.text.strip()
     except Exception as e:
@@ -32,10 +33,18 @@ def get_remote_version():
     return None
 
 def is_new_version(local_version, remote_version):
-    return local_version != remote_version
+    def parse(v):
+        return tuple(int(x) for x in v.split('.'))
+    try:
+        return parse(remote_version) > parse(local_version)
+    except Exception:
+        return local_version != remote_version
 
-def download_new_version():
-    url = "https://github.com/FreshSoul/Wreaper/raw/main/wreaper.exe"
+def download_new_version():  # 保留旧函数（若别处引用），但标记不再直接在 UI 线程使用
+    """
+    同步下载（已被线程版本替代），保留以兼容；不要在 GUI 线程调用。
+    """
+    url = UPDATE_URL
     save_path = "wreaper_new.exe"
     try:
         resp = requests.get(url, stream=True)
@@ -48,28 +57,62 @@ def download_new_version():
         return False
 
 def replace_and_restart():
-    bat_content = """
-    timeout /t 2
-    del wreaper.exe
-    rename wreaper_new.exe wreaper.exe
-    start wreaper.exe
-    """
-    with open("update.bat", "w") as f:
+    bat_content = (
+        "@echo off\r\n"
+        "timeout /t 2 /nobreak >nul\r\n"
+        "taskkill /f /im wreaper.exe >nul 2>&1\r\n"
+        "if exist wreaper_new.exe (\r\n"
+        "  del /f /q wreaper.exe >nul 2>&1\r\n"
+        "  ren wreaper_new.exe wreaper.exe\r\n"
+        "  start \"\" wreaper.exe\r\n"
+        ") else (\r\n"
+        "  echo 未找到新文件\r\n"
+        "  pause\r\n"
+        ")\r\n"
+    )
+    with open("update.bat", "w", encoding="utf-8") as f:
         f.write(bat_content)
     os.startfile("update.bat")
     sys.exit()
 
-def check_update_and_prompt():
-    local_version = APP_VERSION
-    remote_version = get_remote_version()
-    if remote_version and is_new_version(local_version, remote_version):
-        reply = QMessageBox.question(None, "发现新版本", f"检测到新版本 {remote_version}，是否下载并更新？", QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            if download_new_version():
-                QMessageBox.information(None, "下载完成", "新版本已下载，程序将自动重启完成更新。")
-                replace_and_restart()
-            else:
-                QMessageBox.warning(None, "下载失败", "新版本下载失败，请检查网络。")
+class DownloadThread(QThread):
+    progress = pyqtSignal(int)              # 百分比
+    finished = pyqtSignal(bool, str)        # (成功?, 错误信息)
+
+    def __init__(self, url, save_path, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.save_path = save_path
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+
+    def run(self):
+        try:
+            resp = requests.get(self.url, stream=True, timeout=15)
+            resp.raise_for_status()
+            total = int(resp.headers.get('content-length', 0))
+            downloaded = 0
+            with open(self.save_path, 'wb') as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if self._cancel:
+                        self.finished.emit(False, "用户取消")
+                        return
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = int(downloaded * 100 / total)
+                        self.progress.emit(pct)
+            self.progress.emit(100)
+            self.finished.emit(True, "")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
+
 
 
 
@@ -78,8 +121,12 @@ class Wreaper(QWidget):
 #前端
     def __init__(self):
         super().__init__()
-        self.wwise_client = None  
+        self.wwise_client = None
+        self.download_thread = None
+        self.progress_dialog = None
         self.initUI()
+        # 窗口显示后再检查（避免构造期弹框）
+        QTimer.singleShot(300, self.check_update_and_prompt_async)
 
     def initUI(self):
         self.set_background_image("test.jpg")
@@ -136,9 +183,11 @@ class Wreaper(QWidget):
         self.button4 = self.create_anime_button("渲染回Wwise", "#000000", "#5E9DD1")
         self.button4.clicked.connect(self.execute_rendering)
         button_layout.addWidget(self.button4)
-
         main_layout.addLayout(button_layout)
 
+        self.button_update = self.create_anime_button("检查更新", "#000000", "#5E9DD1")
+        self.button_update.clicked.connect(self.check_update_and_prompt_async)
+        button_layout.addWidget(self.button_update)
         # 底部状态区域
         status_layout = QHBoxLayout()
         self.status_label = QLabel("蓝莓派出品")
@@ -191,7 +240,7 @@ class Wreaper(QWidget):
         button = QPushButton(text)
         button.setStyleSheet(f"""
             QPushButton {{
-                background: : rgba({self.hex_to_rgb(color1)}, 0.1);
+                background: rgba({self.hex_to_rgb(color1)}, 0.1);
                 border: 2px solid {color1};
                 border-radius: 15px;
                 padding: 15px;
@@ -227,17 +276,60 @@ class Wreaper(QWidget):
         b = int(hex_color[4:6], 16)
         return f"{r}, {g}, {b}"
 
+    def check_update_and_prompt_async(self):
+            remote_version = get_remote_version()
+            if remote_version and is_new_version(APP_VERSION, remote_version):
+                reply = QMessageBox.question(self, "发现新版本",
+                                            f"检测到新版本 {remote_version}，是否下载并更新？",
+                                            QMessageBox.Yes | QMessageBox.No)
+                if reply == QMessageBox.Yes:
+                    self.start_download_update()
+            # 可根据需要 else: print("无新版本 / 检测失败")
+
+    def start_download_update(self):
+        if self.download_thread and self.download_thread.isRunning():
+            return
+        self.progress_dialog = QProgressDialog("下载更新中...", "取消", 0, 100, self)
+        self.progress_dialog.setWindowTitle("更新")
+        self.progress_dialog.setWindowModality(Qt.WindowModal)
+        self.progress_dialog.canceled.connect(self.cancel_download_update)
+        self.progress_dialog.show()
+
+        self.download_thread = DownloadThread(UPDATE_URL, "wreaper_new.exe", self)
+        self.download_thread.progress.connect(self.progress_dialog.setValue)
+        self.download_thread.finished.connect(self.on_download_finished)
+        self.download_thread.start()
+
+    def cancel_download_update(self):
+        if self.download_thread and self.download_thread.isRunning():
+            self.download_thread.cancel()
+
+    def on_download_finished(self, success, error_msg):
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+        if success:
+            QMessageBox.information(self, "下载完成", "新版本已下载，程序将自动重启完成更新。")
+            replace_and_restart()
+        else:
+            if error_msg == "用户取消":
+                QMessageBox.information(self, "已取消", "已取消更新。")
+            else:
+                QMessageBox.warning(self, "下载失败", f"下载失败：{error_msg}")
+
     def set_background_image(self, image_path):
         """设置窗口背景图片"""
         palette = QPalette()
         pixmap = QPixmap(image_path)
-        palette.setBrush(QPalette.Background, QBrush(pixmap.scaled(
-            self.size(),
-            Qt.IgnoreAspectRatio,
-            Qt.SmoothTransformation
-        )))
-        self.setPalette(palette)
-        self.setAutoFillBackground(True)
+        if not pixmap.isNull():
+            # 使用 Window 而非已弃用的 Background
+            palette.setBrush(QPalette.Window, QBrush(pixmap.scaled(
+                self.size(),
+                Qt.IgnoreAspectRatio,
+                Qt.SmoothTransformation
+            )))
+            self.setPalette(palette)
+            self.setAutoFillBackground(True)
 
     def resizeEvent(self, event):
         self.set_background_image("test.jpg")
@@ -248,11 +340,11 @@ class Wreaper(QWidget):
             if not self.wwise_client or not self.wwise_client.is_connected():
                 self.wwise_client = WaapiClient()
             return func(*args, **kwargs)
-        except CannotConnectToWaapiException as e:
-            self.show_error("无法连接到Wwise", "请确保Wwise正在运行")
+        except CannotConnectToWaapiException:
+            self.show_error_message("无法连接到Wwise", "请确保Wwise正在运行")
             return None
         except Exception as e:
-            self.show_error("Wwise操作错误", str(e))
+            self.show_error_message("Wwise操作错误", str(e))
             print(f"Wwise错误详情: {traceback.format_exc()}")
             return None
 
@@ -302,15 +394,11 @@ class Wreaper(QWidget):
 
     def is_reaper_running(self):
         try:
-            output = subprocess.check_output('tasklist', encoding='gbk', errors='ignore')
-            lines = output.splitlines()
-            for line in lines:
-                parts = line.split()  # 拆分每一行
-                if len(parts) > 0 and parts[0].lower() == "reaper.exe":  # 严格匹配 "reaper.exe"
+            for p in psutil.process_iter(['name']):
+                if p.info['name'] and p.info['name'].lower() == 'reaper.exe':
                     return True
         except Exception as e:
-            self.show_error_message("检测 Reaper 运行状态时出错", str(e))
-            print(f"检测 Reaper 运行状态时出错: {e}")
+            self.show_error_message("检测进程失败", str(e))
         return False
 
     def open_audio_in_reaper(self, audio_paths):
@@ -389,39 +477,36 @@ class Wreaper(QWidget):
         selected_audio_files = self.get_selected_audio_files()
         num_items = rpp.CountSelectedMediaItems(0)
         if num_items == 0:
-            rpp.ShowConsoleMsg("没有选中任何音频！")
+            rpp.ShowConsoleMsg("没有选中任何音频！\n")
             return
 
+        wwise_map = {os.path.basename(p): p for p in selected_audio_files}
+        unmatched = []
         should_render = False
-        unmatched_files = []
-
-        # 获取 Wwise 选中文件名集合
-        wwise_file_names = set(os.path.basename(f) for f in selected_audio_files)
 
         for i in range(num_items):
             item = rpp.GetSelectedMediaItem(0, i)
             take = rpp.GetActiveTake(item)
+            if not take:
+                continue
             take_name = rpp.GetTakeName(take)
-            if take:
-                if take_name in wwise_file_names:
-                    for file_path in selected_audio_files:
-                        if take_name == os.path.basename(file_path):
-                            source_path = file_path
-                            if source_path:
-                                source_path_parent_folder = os.path.dirname(source_path)
-                                rpp.GetSetProjectInfo(0, "RENDER_SETTINGS", 32, True)
-                                rpp.GetSetProjectInfo_String(0, "RENDER_FILE", source_path_parent_folder, True)
-                                rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$item", True)
-                                rpp.ShowConsoleMsg(f"已覆盖渲染: {source_path}\n")
-                                should_render = True
-                else:
-                    unmatched_files.append(take_name)
+            if take_name in wwise_map:
+                source_path = wwise_map[take_name]
+                parent_dir = os.path.dirname(source_path)
+                if not os.access(parent_dir, os.W_OK):
+                    self.show_error_message("目录不可写", parent_dir)
+                    return
+                rpp.GetSetProjectInfo(0, "RENDER_SETTINGS", 32, True)
+                rpp.GetSetProjectInfo_String(0, "RENDER_FILE", parent_dir, True)
+                rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$item", True)
+                rpp.ShowConsoleMsg(f"已覆盖渲染: {source_path}\n")
+                should_render = True
+            else:
+                unmatched.append(take_name)
 
-        if unmatched_files:
-            self.show_error_message(
-                "文件名不匹配",
-                f"以下Reaper选中的文件未在Wwise中选中：\n" + "\n".join(unmatched_files)
-            )
+        if unmatched:
+            self.show_error_message("文件名不匹配",
+                                    "以下Reaper选中项未在Wwise中选中：\n" + "\n".join(unmatched))
 
         if should_render:
             rpp.Main_OnCommand(41824, 0)
@@ -431,7 +516,6 @@ class Wreaper(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     try:
-        check_update_and_prompt()
         window = Wreaper()
         window.show()
         sys.exit(app.exec_())
