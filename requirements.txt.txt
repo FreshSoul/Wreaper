@@ -1,5 +1,0 @@
-PyQt5
-requests
-psutil
-reapy
-waapi-client
