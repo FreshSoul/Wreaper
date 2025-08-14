@@ -1,4 +1,4 @@
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 CONFIG_FILE = "reaperconfig.txt"
 
 # 更新相关

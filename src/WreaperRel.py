@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush, QFont
-from PyQt5.QtCore import Qt, QTimer, QSettings
+from PyQt5.QtCore import Qt, QTimer, QSettings, QThread, pyqtSignal
 
 from utils.config import APP_VERSION, CONFIG_FILE, UPDATE_URL, VERSION_FILE_URL
 from backend.wwise_service import WwiseService
@@ -24,11 +24,26 @@ from utils.resources import resource_path
 from utils.update_runner import replace_and_restart
 
 
+class GetSelectedFilesThread(QThread):
+    finished_ok = pyqtSignal(list)
+    failed = pyqtSignal(str)
+
+    def __init__(self, service, parent=None):
+        super().__init__(parent)
+        self.service = service
+
+    def run(self):
+        try:
+            files = self.service.get_selected_audio_files()
+            self.finished_ok.emit(files or [])
+        except Exception as e:
+            self.failed.emit(str(e))
+
 class Wreaper(QWidget):
     # 前端（UI）
     def __init__(self):
         super().__init__()
-        self.settings = QSettings("", "WreaperApp")
+        self.settings = QSettings("wreaper", "WreaperApp")
         # 后端服务实例
         self.wwise_service = WwiseService()
         self.reaper_service = ReaperService()
@@ -341,19 +356,41 @@ class Wreaper(QWidget):
                 self.reaper_service.start_reaper(reaper_path)
                 time.sleep(1)
 
-            selected_audio_files = self.get_selected_audio_files()
-            if selected_audio_files:
-                for file_path in selected_audio_files:
-                    self.remove_readonly_attribute(file_path)
-                try:
-                    self.reaper_service.open_audio_in_reaper(selected_audio_files)
-                except Exception as e:
-                    self.show_error_message("导入音频到Reaper时出错", f"{e}\n请尝试重启Wreaper")
-            else:
-                print("没有选中的音频文件。")
+            # 子线程获取，避免阻塞
+            self.fetch_dialog = QProgressDialog("正在从 Wwise 获取选中对象...", None, 0, 0, self)
+            self.fetch_dialog.setWindowTitle("请稍候")
+            self.fetch_dialog.setCancelButton(None)
+            self.fetch_dialog.setWindowModality(Qt.WindowModal)
+            self.fetch_dialog.show()
+
+            self.wwise_thread = GetSelectedFilesThread(self.wwise_service, self)
+            self.wwise_thread.finished_ok.connect(self._on_got_wwise_files)
+            self.wwise_thread.failed.connect(self._on_wwise_files_failed)
+            self.wwise_thread.start()
+
         except Exception as e:
             self.show_error_message("启动Reaper时出错", str(e))
             print(f"错误详情: {traceback.format_exc()}")
+
+    def _on_got_wwise_files(self, selected_audio_files):
+        if getattr(self, "fetch_dialog", None):
+            self.fetch_dialog.close()
+            self.fetch_dialog = None
+        if selected_audio_files:
+            for file_path in selected_audio_files:
+                self.remove_readonly_attribute(file_path)
+            try:
+                self.reaper_service.open_audio_in_reaper(selected_audio_files)
+            except Exception as e:
+                self.show_error_message("导入音频到Reaper时出错", f"{e}\n请尝试重启Wreaper")
+        else:
+            print("没有选中的音频文件。")
+
+    def _on_wwise_files_failed(self, message):
+        if getattr(self, "fetch_dialog", None):
+            self.fetch_dialog.close()
+            self.fetch_dialog = None
+        self.show_error_message("Wwise错误", message)
 
     # Reaper -> Wwise（覆盖渲染）
     def execute_rendering(self):

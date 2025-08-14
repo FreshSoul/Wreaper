@@ -29,3 +29,4 @@ class DownloadThread(QThread):
             self.finished.emit(ok, msg)
         except Exception as e:
             self.finished.emit(False, str(e))
+            
