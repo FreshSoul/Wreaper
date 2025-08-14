@@ -46,7 +46,7 @@
   ('pyi_rth__tkinter',
    'D:\\Wreaper\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth__tkinter.py',
    'PYSOURCE'),
-  ('wreaper', 'D:\\Wreaper\\src\\wreaper.py', 'PYSOURCE')],
+  ('WreaperRel', 'D:\\Wreaper\\src\\WreaperRel.py', 'PYSOURCE')],
  'python39.dll',
  True,
  False,

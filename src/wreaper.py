@@ -11,9 +11,9 @@ import tkinter as tk
 from tkinter import filedialog
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QVBoxLayout,
                             QMessageBox, QLabel, QHBoxLayout, QProgressDialog,
-                            QTabWidget, QFormLayout, QSpacerItem, QSizePolicy
-                            )
-from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush
+                            QTabWidget, QFormLayout, QSpacerItem, QSizePolicy,
+                            QToolButton, QMenu, QMenuBar)
+from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush, QFont
 from PyQt5.QtCore import Qt,QThread, pyqtSignal, QTimer,QSettings
 from waapi import WaapiClient,CannotConnectToWaapiException
 import requests
@@ -79,8 +79,8 @@ def replace_and_restart():
     sys.exit()
 
 class DownloadThread(QThread):
-    progress = pyqtSignal(int)              # 百分比
-    finished = pyqtSignal(bool, str)        # (成功?, 错误信息)
+    progress = pyqtSignal(int)             
+    finished = pyqtSignal(bool, str)       
 
     def __init__(self, url, save_path, parent=None):
         super().__init__(parent)
@@ -137,31 +137,30 @@ class Wreaper(QWidget):
         if not os.path.exists(bg_path):
             bg_path = "test.jpg"
         self.set_background_image(bg_path)
-        # 主布局
+
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
+
+        # ========= 新增菜单栏（页边框上） =========
+        menubar = QMenuBar(self)
+        settings_menu = menubar.addMenu("功能")
+        act_config = settings_menu.addAction("配置Reaper启动路径")
+        act_bg = settings_menu.addAction("更换背景图")
+        act_checkupdate = settings_menu.addAction("检查更新")
         
-        # 顶部标题区域
+        act_config.triggered.connect(self.Select_reaperconfig)
+        act_bg.triggered.connect(self.change_background_image)
+        act_checkupdate.triggered.connect(lambda checked=False: self.check_update_and_prompt_async(manual=True))
+        # 可按需再添加其它菜单
+        main_layout.setMenuBar(menubar)
+        # =======================================
+
+        # 顶部标题/Logo区域（去掉原 QToolButton 下拉）
         title_layout = QHBoxLayout()
-
-        # 图标
         self.logo_label = QLabel()
-
         self.logo_label.setPixmap(QPixmap("WwiseLogo.png").scaled(80, 80, Qt.KeepAspectRatio))
         title_layout.addWidget(self.logo_label)
-
-        # 标题文本
-        # title_text = QLabel("Wreaper")
-        # title_font = QFont()
-        # title_font.setFamily("Arial Rounded MT Bold")
-        # title_font.setPointSize(50)
-        # title_font.setBold(True)
-        # title_text.setFont(title_font)
-        # title_text.setStyleSheet("color: #000000;")
-        # title_layout.addWidget(title_text)
-
-        # 添加弹性空间使标题居中
         title_layout.addStretch()
         main_layout.addLayout(title_layout)
 
@@ -171,51 +170,32 @@ class Wreaper(QWidget):
         main_layout.addWidget(separator)
 
         button_layout = QVBoxLayout()
-        button_layout.setSpacing(15)
+        button_layout.setSpacing(12)
 
-        # 按钮1 - 配置Reaper启动路径
-        self.button1 = self.create_anime_button("配置Reaper启动路径", "#000000", "#5E9DD1")
-        self.button1.clicked.connect(self.Select_reaperconfig)
-        button_layout.addWidget(self.button1)
-        # 按钮2 - 启动Reaper
         self.button2 = self.create_anime_button("启动Reaper", "#000000", "#5E9DD1")
-        self.button2.clicked.connect(self.StartReaper)
-        button_layout.addWidget(self.button2)
-        # 按钮2 - 导入Reaper
-        self.button3 = self.create_anime_button("导入Reaper", "#000000", "#5E9DD1")
-        self.button3.clicked.connect(self.start_reaper_and_open_audio)
-        button_layout.addWidget(self.button3)
+        button_layout.addWidget(self.button2, 1)
 
-        # 按钮3 - 渲染回Wwise
+        self.button3 = self.create_anime_button("导入Reaper", "#000000", "#5E9DD1")
+        button_layout.addWidget(self.button3, 1)
+
         self.button4 = self.create_anime_button("渲染回Wwise", "#000000", "#5E9DD1")
-        self.button4.clicked.connect(self.execute_rendering)
-        button_layout.addWidget(self.button4)
+        button_layout.addWidget(self.button4, 1)
+
+        
+
         main_layout.addLayout(button_layout)
 
-        self.button_update = self.create_anime_button("检查更新", "#000000", "#5E9DD1")
-        self.button_update.clicked.connect(lambda: self.check_update_and_prompt_async(manual=True))
-        button_layout.addWidget(self.button_update)
-        
-        # 按钮5 - 更换背景图
-        self.button_bg = self.create_anime_button("更换背景图", "#000000", "#5E9DD1")
-        self.button_bg.clicked.connect(self.change_background_image)
-        button_layout.addWidget(self.button_bg)
-        # 底部状态区域
         status_layout = QHBoxLayout()
         self.status_label = QLabel("蓝莓派出品")
         self.status_label.setStyleSheet("color: #000000; font-style: italic;")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
-# 版本号标签（右下角）
         self.version_label = QLabel(f"v{APP_VERSION}")
         self.version_label.setStyleSheet("color: #000000; font-style: italic;")
         status_layout.addWidget(self.version_label)
-
-        # 小图标
         anime_icon = QLabel()
         anime_icon.setPixmap(QPixmap("reaperLogo.jpg").scaled(30, 30, Qt.KeepAspectRatio))
         status_layout.addWidget(anime_icon)
-
         main_layout.addLayout(status_layout)
 
         self.setLayout(main_layout)
@@ -252,35 +232,36 @@ class Wreaper(QWidget):
                }
            """)
 
+
+
     def create_anime_button(self, text, color1, color2):
         button = QPushButton(text)
         button.setStyleSheet(f"""
             QPushButton {{
-                background: rgba({self.hex_to_rgb(color1)}, 0.1);
+                background: rgba({self.hex_to_rgb(color1)}, 0.10);
                 border: 2px solid {color1};
                 border-radius: 15px;
-                padding: 15px;
+                padding: 14px;
                 font-weight: bold;
                 font-size: 16px;
                 color: {color1};
-                text-align: center;
-                min-width: 200px;
             }}
             QPushButton:hover {{
-                background: rgba({self.hex_to_rgb(color1)}, 0.2);
+                background: rgba({self.hex_to_rgb(color1)}, 0.20);
                 border: 2px solid {color1};
                 color: {color2};
             }}
             QPushButton:pressed {{
-                background: rgba({self.hex_to_rgb(color2)}, 0.3);
+                background: rgba({self.hex_to_rgb(color2)}, 0.30);
                 color: white;
                 position: relative;
                 top: 1px;
                 left: 1px;
             }}
         """)
-        button.setCursor(Qt.PointingHandCursor)
-        button.setFixedHeight(60)
+        # 关键：允许在水平 & 垂直方向扩展
+        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        button.setMinimumHeight(60)   # 防止窗口很小时太扁，可按需调
         return button
 
     # 新增的辅助方法，用于将十六进制颜色转换为RGB格式
@@ -372,6 +353,14 @@ class Wreaper(QWidget):
         self.set_background_image(bg_path)
         super().resizeEvent(event)
 
+   
+
+
+
+
+#后端逻辑
+
+
     def safe_wwis_operation(self, func, *args, **kwargs):
         try:
             if not self.wwise_client or not self.wwise_client.is_connected():
@@ -384,13 +373,6 @@ class Wreaper(QWidget):
             self.show_error_message("Wwise操作错误", str(e))
             print(f"Wwise错误详情: {traceback.format_exc()}")
             return None
-
-
-
-
-#后端逻辑
-
-
 
     def get_selected_audio_files(self):
         try:

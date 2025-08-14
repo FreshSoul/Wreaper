@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['wreaper.py'],
+    ['WreaperRel.py'],
     pathex=[],
     binaries=[],
     datas=[('WwiseLogo.png', '.'), ('reaperLogo.jpg', '.'), ('test.jpg', '.')],
