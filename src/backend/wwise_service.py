@@ -40,7 +40,7 @@ class WwiseService:
 
             # 3) 连接并获取选中对象
             url = f"ws://{self.host}:{self.port}/waapi"
-            # 注意：此版本 WaapiClient 不支持 timeout 参数，不要传
+           
             with WaapiClient(url=url) as client:
                 result = client.call(
                     "ak.wwise.ui.getSelectedObjects",

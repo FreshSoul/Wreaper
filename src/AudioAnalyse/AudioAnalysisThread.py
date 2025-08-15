@@ -1,4 +1,7 @@
-// ...existing code...
+
+import os
+from PyQt5.QtCore import  QThread, pyqtSignal
+from AudioAnalyse import AudioAnalyse as audio_analysis
 
 class AudioAnalysisThread(QThread):
     """音频分析后台线程"""
@@ -152,7 +155,7 @@ class AudioAnalysisThread(QThread):
             filename = os.path.basename(audio_file)
             self.status_update.emit(f"正在分析频谱质心: {filename}")
 
-            success, result = audio_analysis.analyze_audio_file_centroid_wrapper(audio_file, self.output_dir)
+            success, result = audio_analysis.analyze_audio_file_centroid(audio_file, self.output_dir)
             if success:
                 success_count += 1
             else:
@@ -171,143 +174,3 @@ class AudioAnalysisThread(QThread):
             result_msg += f"\n失败: {len(error_messages)} 个文件\n\n错误详情已保存到日志文件"
 
         self.finished_ok.emit(result_msg)
-
-class Wreaper(QWidget):
-    # 前端（UI）
-    def __init__(self):
-        super().__init__()
-        self.settings = QSettings("wreaper", "WreaperApp")
-        # 后端服务实例
-        self.wwise_service = WwiseService()
-        self.reaper_service = ReaperService()
-        self.updater = Updater(VERSION_FILE_URL, UPDATE_URL)
-
-        # 下载相关
-        self.download_thread = None
-        self.progress_dialog = None
-        
-        # 音频分析相关
-        self.analysis_thread = None
-        self.analysis_progress_dialog = None
-
-        self.initUI()
-        # 启动后延时自动检查（不弹"已是最新版本"）
-        QTimer.singleShot(300, self.check_update_and_prompt_async)
-
-    # ...existing code...
-
-    def audio_analysis_2d(self):
-        # 选择音频文件夹
-        input_dir = audio_analysis.select_directory_2d("请选择包含音频文件的文件夹")
-        if not input_dir:
-            return
-
-        # 选择输出文件夹
-        default_output = os.path.join(input_dir, "频谱图结果")
-        output_dir = audio_analysis.select_directory_2d("请选择输出文件夹 (将自动创建)") or default_output
-
-        reply = QMessageBox.question(
-            self, "确认",
-            f"将从:\n{input_dir}\n生成频谱图到:\n{output_dir}\n\n是否继续?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self._start_audio_analysis("2d", input_dir, output_dir)
-
-    def audio_analysis_3d(self):
-        input_dir = audio_analysis.select_directory_3d("请选择包含音频文件的文件夹")
-        if not input_dir:
-            return
-        
-        default_output_dir = os.path.join(input_dir, "3D频谱图输出")
-        output_dir = audio_analysis.select_directory_3d("请选择输出文件夹", default_output_dir) or default_output_dir
-
-        reply = QMessageBox.question(
-            self, "确认",
-            f"将从:\n{input_dir}\n生成频谱图到:\n{output_dir}\n\n是否继续?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self._start_audio_analysis("3d", input_dir, output_dir)
-
-    def audio_analysis_centroid(self):
-        input_dir = audio_analysis.select_directory_centroid("请选择包含音频文件的文件夹")
-        if not input_dir:
-            return
-
-        # 选择输出文件夹
-        default_output = os.path.join(input_dir, "频谱质心分析结果")
-        output_dir = audio_analysis.select_directory_centroid("请选择输出文件夹 (将自动创建)", default_output) or default_output
-
-        # 使用PyQt5确认对话框（保持与其他功能一致）
-        reply = QMessageBox.question(
-            self, "确认",
-            f"将从:\n{input_dir}\n生成频谱质心分析到:\n{output_dir}\n\n是否继续?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self._start_audio_analysis("centroid", input_dir, output_dir)
-
-    def _start_audio_analysis(self, analysis_type, input_dir, output_dir):
-        """启动音频分析任务"""
-        if self.analysis_thread and self.analysis_thread.isRunning():
-            QMessageBox.warning(self, "任务进行中", "已有分析任务正在进行，请等待完成后再试。")
-            return
-
-        # 创建进度对话框
-        type_names = {"2d": "2D频谱分析", "3d": "3D频谱分析", "centroid": "频谱质心分析"}
-        title = type_names.get(analysis_type, "音频分析")
-        
-        self.analysis_progress_dialog = QProgressDialog(f"正在进行{title}...", "取消", 0, 100, self)
-        self.analysis_progress_dialog.setWindowTitle(title)
-        self.analysis_progress_dialog.setWindowModality(Qt.WindowModal)
-        self.analysis_progress_dialog.setMinimumDuration(0)  # 立即显示
-        self.analysis_progress_dialog.canceled.connect(self._cancel_audio_analysis)
-        self.analysis_progress_dialog.show()
-
-        # 创建并启动分析线程
-        self.analysis_thread = AudioAnalysisThread(analysis_type, input_dir, output_dir, self)
-        self.analysis_thread.progress.connect(self.analysis_progress_dialog.setValue)
-        self.analysis_thread.status_update.connect(self._update_analysis_status)
-        self.analysis_thread.finished_ok.connect(self._on_analysis_finished)
-        self.analysis_thread.failed.connect(self._on_analysis_failed)
-        self.analysis_thread.start()
-
-    def _update_analysis_status(self, status):
-        """更新分析状态文本"""
-        if self.analysis_progress_dialog:
-            self.analysis_progress_dialog.setLabelText(status)
-
-    def _cancel_audio_analysis(self):
-        """取消音频分析"""
-        if self.analysis_thread and self.analysis_thread.isRunning():
-            self.analysis_thread.cancel()
-
-    def _on_analysis_finished(self, result_message):
-        """分析完成处理"""
-        if self.analysis_progress_dialog:
-            self.analysis_progress_dialog.close()
-            self.analysis_progress_dialog = None
-
-        QMessageBox.information(self, "处理结果", result_message)
-        
-        # 打开输出文件夹
-        if self.analysis_thread:
-            output_dir = self.analysis_thread.output_dir
-            if os.name == 'nt':  # Windows
-                os.startfile(output_dir)
-            elif os.name == 'posix':  # macOS/Linux
-                os.system(f'open "{output_dir}"' if sys.platform == 'darwin' else f'xdg-open "{output_dir}"')
-
-    def _on_analysis_failed(self, error_message):
-        """分析失败处理"""
-        if self.analysis_progress_dialog:
-            self.analysis_progress_dialog.close()
-            self.analysis_progress_dialog = None
-
-        if error_message != "用户取消操作":
-            QMessageBox.critical(self, "分析失败", error_message)
-        else:
-            QMessageBox.information(self, "已取消", "音频分析已取消。")
-
-// ...existing code...

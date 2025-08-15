@@ -1,28 +1,39 @@
 import sys
 import traceback
-import subprocess
 from reapy import reascript_api as rpp
 import stat
 import os
 import time
-import tkinter as tk
-from tkinter import filedialog
 
+ # 减体积：禁用 librosa 的 numba 加速（功能不变，速度略慢）
+os.environ["LIBROSA_DISABLE_NUMBA"] = "1"
+# 减体积：使用非交互后端，避免打包 tk/qt 后端的额外资源
+import matplotlib
+matplotlib.use("Agg")
+
+from matplotlib import rcParams
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QMessageBox, QLabel,
-    QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar
+    QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush, QFont
 from PyQt5.QtCore import Qt, QTimer, QSettings, QThread, pyqtSignal
-
-from utils.config import APP_VERSION, CONFIG_FILE, UPDATE_URL, VERSION_FILE_URL
+from utils.config import (
+    APP_VERSION, CONFIG_FILE, VERSION_FILE_URL,
+    GITHUB_OWNER, GITHUB_REPO, RELEASE_ASSET_EXE, TAG_PREFIX
+)
 from backend.wwise_service import WwiseService
 from backend.reaper_service import ReaperService
 from backend.updater import Updater
 from utils.download_thread import DownloadThread
 from utils.resources import resource_path
 from utils.update_runner import replace_and_restart
+from AudioAnalyse import AudioAnalyse as audio_analysis
+from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread
 
+
+rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
+rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
 class GetSelectedFilesThread(QThread):
     finished_ok = pyqtSignal(list)
@@ -43,16 +54,21 @@ class Wreaper(QWidget):
     # 前端（UI）
     def __init__(self):
         super().__init__()
-        self.settings = QSettings("wreaper", "WreaperApp")
+        self.settings = QSettings("Wreaper", "WreaperApp")
         # 后端服务实例
         self.wwise_service = WwiseService()
         self.reaper_service = ReaperService()
-        self.updater = Updater(VERSION_FILE_URL, UPDATE_URL)
+        self.updater = Updater(VERSION_FILE_URL, "")
 
         # 下载相关
         self.download_thread = None
         self.progress_dialog = None
 
+        # 音频分析相关
+        self.analysis_thread = None
+        self.analysis_progress_dialog = None
+        
+        
         self.initUI()
         # 启动后延时自动检查（不弹“已是最新版本”）
         QTimer.singleShot(300, self.check_update_and_prompt_async)
@@ -75,10 +91,18 @@ class Wreaper(QWidget):
         act_bg = menu.addAction("更换背景图")
         act_checkupdate = menu.addAction("检查更新")
 
+        menu_audio = menubar.addMenu("音频分析")
+        act_audio_centroid = menu_audio.addAction("音频频谱质心分析")
+        act_audio_3d = menu_audio.addAction("音频3D频谱分析")
+        act_audio_2d = menu_audio.addAction("音频2D频谱分析")
+        
         # QAction.triggered 会传 bool(checked)，用 lambda 吞掉并传手动标记
         act_config.triggered.connect(lambda checked=False: self.Select_reaperconfig())
         act_bg.triggered.connect(lambda checked=False: self.change_background_image())
         act_checkupdate.triggered.connect(lambda checked=False: self.check_update_and_prompt_async(manual=True))
+        act_audio_centroid.triggered.connect(lambda checked=False: self.audio_analysis_centroid())
+        act_audio_3d.triggered.connect(lambda checked=False: self.audio_analysis_3d())
+        act_audio_2d.triggered.connect(lambda checked=False: self.audio_analysis_2d())
 
         main_layout.setMenuBar(menubar)
 
@@ -124,7 +148,7 @@ class Wreaper(QWidget):
 
         # 底部状态区域
         status_layout = QHBoxLayout()
-        self.status_label = QLabel("蓝莓派出品")
+        self.status_label = QLabel("ALL FOR AUDIO")
         self.status_label.setStyleSheet("color: #000000; font-style: italic;")
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
@@ -219,11 +243,11 @@ class Wreaper(QWidget):
         super().resizeEvent(event)
 
     def change_background_image(self):
-        root = tk.Tk()
-        root.withdraw()
-        file_path = filedialog.askopenfilename(
-            title="选择背景图片",
-            filetypes=[("图片文件", "*.jpg *.png *.jpeg *.bmp *.gif")]
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择背景图片",
+            "", # 默认目录
+            "图片文件 (*.jpg *.png *.jpeg *.bmp *.gif)"
         )
         if file_path:
             self.set_background_image(file_path)
@@ -237,6 +261,8 @@ class Wreaper(QWidget):
             if manual:
                 QMessageBox.warning(self, "检查失败", f"无法获取远程版本信息：{e}")
             return
+
+        self._remote_version = remote_version  # 记录待下载的远程版本
 
         if remote_version and self.updater.is_new_version(APP_VERSION, remote_version):
             reply = QMessageBox.question(
@@ -253,17 +279,22 @@ class Wreaper(QWidget):
     def start_download_update(self):
         if self.download_thread and self.download_thread.isRunning():
             return
+        if getattr(self, "_remote_version", None):
+            url = self.updater.build_release_asset_url(
+                GITHUB_OWNER, GITHUB_REPO, self._remote_version, RELEASE_ASSET_EXE, TAG_PREFIX
+            )
+            self.updater.update_url = url
         self.progress_dialog = QProgressDialog("下载更新中...", "取消", 0, 100, self)
         self.progress_dialog.setWindowTitle("更新")
         self.progress_dialog.setWindowModality(Qt.WindowModal)
         self.progress_dialog.canceled.connect(self.cancel_download_update)
         self.progress_dialog.show()
 
-        self.download_thread = DownloadThread(self.updater, "wreaper_new.exe", self)
+        self.download_thread = DownloadThread(self.updater, "Wreaper_new.exe", self)
         self.download_thread.progress.connect(self.progress_dialog.setValue)
         self.download_thread.finished.connect(self.on_download_finished)
         self.download_thread.start()
-
+        
     def cancel_download_update(self):
         if self.download_thread and self.download_thread.isRunning():
             self.download_thread.cancel()
@@ -281,7 +312,7 @@ class Wreaper(QWidget):
             else:
                 QMessageBox.warning(self, "下载失败", f"下载失败：{error_msg}")
 
-    # 路径/文件与 Reaper 相关（前端负责与用户交互）
+    # 路径/文件与 Reaper 相关
     def get_default_reaper_path(self):
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as file:
@@ -299,9 +330,13 @@ class Wreaper(QWidget):
             file.write(path)
 
     def select_new_reaper_project(self):
-        root = tk.Tk()
-        root.withdraw()
-        return filedialog.askopenfilename(title="选择 REAPER 启动文件", filetypes=[("Executable files", "*.exe")])
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择 REAPER 启动文件",
+            "", # 默认目录
+            "可执行文件 (*.exe)"
+        )
+        return file_path
 
     def show_error_message(self, title, message):
         QMessageBox.critical(self, title, message)
@@ -430,6 +465,122 @@ class Wreaper(QWidget):
         if should_render:
             rpp.Main_OnCommand(41824, 0)
 
+
+
+    def audio_analysis_2d(self):
+        # 选择音频文件夹
+        input_dir = audio_analysis.select_directory_2d("请选择包含音频文件的文件夹")
+        if not input_dir:
+            return
+
+        # 选择输出文件夹
+        default_output = os.path.join(input_dir, "频谱图结果")
+        output_dir = audio_analysis.select_directory_centroid("请选择输出文件夹", default_output) or default_output
+
+        reply = QMessageBox.question(
+            self, "确认",
+            f"将从:\n{input_dir}\n生成频谱图到:\n{output_dir}\n\n是否继续?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self._start_audio_analysis("2d", input_dir, output_dir)
+
+    def audio_analysis_3d(self):
+        input_dir = audio_analysis.select_directory_3d("请选择包含音频文件的文件夹")
+        if not input_dir:
+            return
+        
+        default_output_dir = os.path.join(input_dir, "3D频谱图输出")
+        output_dir = audio_analysis.select_directory_3d("请选择输出文件夹", default_output_dir) or default_output_dir
+
+        reply = QMessageBox.question(
+            self, "确认",
+            f"将从:\n{input_dir}\n生成频谱图到:\n{output_dir}\n\n是否继续?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self._start_audio_analysis("3d", input_dir, output_dir)
+            
+    def audio_analysis_centroid(self):
+
+        input_dir = audio_analysis.select_directory_centroid("请选择包含音频文件的文件夹")
+        if not input_dir:
+            return
+
+        # 选择输出文件夹
+        default_output = os.path.join(input_dir, "频谱质心分析结果")
+        output_dir = audio_analysis.select_directory_centroid("请选择输出文件夹", default_output) or default_output
+
+        # 使用PyQt5确认对话框（保持与其他功能一致）
+        reply = QMessageBox.question(
+            self, "确认",
+            f"将从:\n{input_dir}\n生成频谱质心分析到:\n{output_dir}\n\n是否继续?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self._start_audio_analysis("centroid", input_dir, output_dir)
+
+    def _start_audio_analysis(self, analysis_type, input_dir, output_dir):
+        """启动音频分析任务"""
+        if self.analysis_thread and self.analysis_thread.isRunning():
+            QMessageBox.warning(self, "任务进行中", "已有分析任务正在进行，请等待完成后再试。")
+            return
+
+        # 创建进度对话框
+        type_names = {"2d": "2D频谱分析", "3d": "3D频谱分析", "centroid": "频谱质心分析"}
+        title = type_names.get(analysis_type, "音频分析")
+        
+        self.analysis_progress_dialog = QProgressDialog(f"正在进行{title}...", "取消", 0, 100, self)
+        self.analysis_progress_dialog.setWindowTitle(title)
+        self.analysis_progress_dialog.setWindowModality(Qt.WindowModal)
+        self.analysis_progress_dialog.setMinimumDuration(0)  # 立即显示
+        self.analysis_progress_dialog.canceled.connect(self._cancel_audio_analysis)
+        self.analysis_progress_dialog.show()
+
+        # 创建并启动分析线程
+        self.analysis_thread = AudioAnalysisThread(analysis_type, input_dir, output_dir, self)
+        self.analysis_thread.progress.connect(self.analysis_progress_dialog.setValue)
+        self.analysis_thread.status_update.connect(self._update_analysis_status)
+        self.analysis_thread.finished_ok.connect(self._on_analysis_finished)
+        self.analysis_thread.failed.connect(self._on_analysis_failed)
+        self.analysis_thread.start()
+
+    def _update_analysis_status(self, status):
+        """更新分析状态文本"""
+        if self.analysis_progress_dialog:
+            self.analysis_progress_dialog.setLabelText(status)
+
+    def _cancel_audio_analysis(self):
+        """取消音频分析"""
+        if self.analysis_thread and self.analysis_thread.isRunning():
+            self.analysis_thread.cancel()
+
+    def _on_analysis_finished(self, result_message):
+        """分析完成处理"""
+        if self.analysis_progress_dialog:
+            self.analysis_progress_dialog.close()
+            self.analysis_progress_dialog = None
+
+        QMessageBox.information(self, "处理结果", result_message)
+        
+        # 打开输出文件夹
+        if self.analysis_thread:
+            output_dir = self.analysis_thread.output_dir
+            if os.name == 'nt':  # Windows
+                os.startfile(output_dir)
+            elif os.name == 'posix':  # macOS/Linux
+                os.system(f'open "{output_dir}"' if sys.platform == 'darwin' else f'xdg-open "{output_dir}"')
+
+    def _on_analysis_failed(self, error_message):
+        """分析失败处理"""
+        if self.analysis_progress_dialog:
+            self.analysis_progress_dialog.close()
+            self.analysis_progress_dialog = None
+
+        if error_message != "用户取消操作":
+            QMessageBox.critical(self, "分析失败", error_message)
+        else:
+            QMessageBox.information(self, "已取消", "音频分析已取消。")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
