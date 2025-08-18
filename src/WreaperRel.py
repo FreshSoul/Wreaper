@@ -5,13 +5,8 @@ import stat
 import os
 import time
 
- # 减体积：禁用 librosa 的 numba 加速（功能不变，速度略慢）
-os.environ["LIBROSA_DISABLE_NUMBA"] = "1"
-# 减体积：使用非交互后端，避免打包 tk/qt 后端的额外资源
-import matplotlib
-matplotlib.use("Agg")
 
-from matplotlib import rcParams
+#from matplotlib import rcParams
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QMessageBox, QLabel,
     QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog
@@ -28,12 +23,12 @@ from backend.updater import Updater
 from utils.download_thread import DownloadThread
 from utils.resources import resource_path
 from utils.update_runner import replace_and_restart
-from AudioAnalyse import AudioAnalyse as audio_analysis
-from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread
+#from AudioAnalyse import AudioAnalyse as audio_analysis
+#from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread
 
 
-rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
-rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+#rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
+#rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
 class GetSelectedFilesThread(QThread):
     finished_ok = pyqtSignal(list)
