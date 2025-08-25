@@ -4,12 +4,12 @@ from reapy import reascript_api as rpp
 import stat
 import os
 import time
-import csv
+import asyncio
 
 from matplotlib import rcParams
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QMessageBox, QLabel,
-    QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog
+    QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog,QDialog, QTextEdit
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush, QFont
 from PyQt5.QtCore import Qt, QTimer, QSettings, QThread, pyqtSignal
@@ -26,75 +26,37 @@ from utils.update_runner import replace_and_restart
 from AudioAnalyse import AudioAnalyse as audio_analysis
 from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread
 from AudioAnalyse import AnalyseLUFS_Game_Wwise as lufs_game_wwise
+from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread, LufsAnalysisThread
 
 rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
 rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
-class LufsAnalysisThread(QThread):
+class GetAudioSourcesThread(QThread):
+    finished_ok = pyqtSignal(list)
+    failed = pyqtSignal(str)
     progress = pyqtSignal(int)
     status = pyqtSignal(str)
-    finished_ok = pyqtSignal(str, list)
-    failed = pyqtSignal(str)
-
-    def __init__(self, audio_files, csv_path, parent=None):
-        super().__init__(parent)
-        self.audio_files = audio_files
-        self.csv_path = csv_path
-        self._is_cancelled = False
-
-    def cancel(self):
-        self._is_cancelled = True
 
     def run(self):
         try:
-            max_depth = max((len(audio.get("ancestors_list", [])) for audio in self.audio_files), default=0)
-            base_fields = [
-                "name", "wwise_path", "file_path", "LUFS-I", "LUFS-M-MAX", "音频时长",
-                "OutPutBus_BusVolume", "OutPutBus_Volume"
-            ]
-            level_fields = []
-            for i in range(1, max_depth + 1):
-                level_fields.extend([f"父级名{i}", f"父级音量{i}", f"父级MakeUpGain{i}"])
-            fieldnames = base_fields + level_fields
-
-            results = []
-            failed_files = []
-            total = len(self.audio_files)
-            for idx, audio in enumerate(self.audio_files, 1):
-                if self._is_cancelled:
-                    self.failed.emit("用户取消操作")
-                    return
-                self.status.emit(f"分析({idx}/{total}): {audio['name']}")
-                try:
-                    integrated, max_momentary = lufs_game_wwise.analyze_loudness_detailed(audio['file_path'])
-                    row = {
-                        "name": audio['name'],
-                        "wwise_path": audio['wwise_path'],
-                        "file_path": audio['file_path'],
-                        "LUFS-I": integrated,
-                        "LUFS-M-MAX": max_momentary,
-                        "音频时长": audio['duration'],
-                        "OutPutBus_BusVolume": audio.get('OutputBus_BusVolume', ""),
-                        "OutPutBus_Volume": audio.get('OutputBus_Volume', ""),
-                    }
-                    ancestors = audio.get("ancestors_list", [])
-                    for i in range(max_depth):
-                        row[f"父级名{i+1}"] = ancestors[i].get("name", "") if i < len(ancestors) else ""
-                        row[f"父级音量{i+1}"] = ancestors[i].get("volume", "") if i < len(ancestors) else ""
-                        row[f"父级MakeUpGain{i+1}"] = ancestors[i].get("makeup", "") if i < len(ancestors) else ""
-                    results.append(row)
-                except Exception as e:
-                    failed_files.append(audio['file_path'])
-                self.progress.emit(int(idx / total * 100))
-            # 写入CSV
-            with open(self.csv_path, "w", newline='', encoding='utf-8-sig') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                for row in results:
-                    writer.writerow(row)
-            self.finished_ok.emit(self.csv_path, failed_files)
+            # 关键：为当前线程创建事件循环
+            try:
+                asyncio.set_event_loop(asyncio.new_event_loop())
+            except Exception:
+                pass
+            from AudioAnalyse import AnalyseLUFS_Game_Wwise as lufs_game_wwise
+            audio_files = lufs_game_wwise.get_audio_sources(
+                progress_callback=self.progress.emit,
+                status_callback=self.status.emit
+            )
+            if not audio_files:
+                self.failed.emit("未找到音频源文件。")
+            else:
+                self.finished_ok.emit(audio_files)
         except Exception as e:
             self.failed.emit(str(e))
+
+
 
 
 
@@ -158,7 +120,7 @@ class Wreaper(QWidget):
         act_audio_centroid = menu_audio.addAction("音频频谱质心分析")
         act_audio_3d = menu_audio.addAction("音频3D频谱分析")
         act_audio_2d = menu_audio.addAction("音频2D频谱分析")
-        act_audio_lufs = menu_audio.addAction("Wwise中资源响度与路由")
+        act_audio_lufs = menu_audio.addAction("Wwise中资源响度路由与游戏内响度")
         
         # QAction.triggered 会传 bool(checked)，用 lambda 吞掉并传手动标记
         act_config.triggered.connect(lambda checked=False: self.Select_reaperconfig())
@@ -242,6 +204,25 @@ class Wreaper(QWidget):
             QPushButton:hover { border: 2px solid #FFFFFF; opacity: 0.9; }
             QPushButton:pressed { position: relative; top: 1px; left: 1px; }
         """)
+
+
+    def show_long_message(self, title, message):
+            dlg = QDialog(self)
+            dlg.setWindowTitle(title)
+            dlg.setMinimumSize(600, 400)
+            layout = QVBoxLayout(dlg)
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+            text_edit.setText(message)
+            layout.addWidget(text_edit)
+            btn_layout = QHBoxLayout()
+            btn_ok = QPushButton("确定")
+            btn_ok.clicked.connect(dlg.accept)
+            btn_layout.addStretch()
+            btn_layout.addWidget(btn_ok)
+            layout.addLayout(btn_layout)
+            dlg.exec_()
+
 
     def load_logo(self):
         logo_path = resource_path("WwiseLogo.png")
@@ -494,6 +475,11 @@ class Wreaper(QWidget):
 
     # Reaper -> Wwise（覆盖渲染）
     def execute_rendering(self):
+        # 检查 Reaper 是否运行
+        if not self.reaper_service.is_reaper_running():
+            QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
+            return
+    
         selected_audio_files = self.get_selected_audio_files()
         num_items = rpp.CountSelectedMediaItems(0)
         if num_items == 0:
@@ -647,72 +633,99 @@ class Wreaper(QWidget):
         else:
             QMessageBox.information(self, "已取消", "音频分析已取消。")
 
+    
     def _analyse_audio_files_game_wwise(self):
     # 先检测 Wwise 端口
         if not self.wwise_service._is_wwise_port_open():
             QMessageBox.warning(self, "Wwise未连接", "无法连接到Wwise，请确保Wwise已启动并启用WAAPI。")
             return
 
-        audio_files = lufs_game_wwise.get_audio_sources()
-        if not audio_files:
-            QMessageBox.information(self, "提示", "未找到音频源文件。")
-            return
-
-        default_csv = os.path.join(os.getcwd(), "Loudness_Analyse.csv")
-        csv_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "选择分析结果保存位置",
-            default_csv,
-            "CSV文件 (*.csv)"
-        )
-        if not csv_path:
-            return
-
-        reply = QMessageBox.question(
-            self, "确认",
-            f"将分析 {len(audio_files)} 个音频文件，结果保存到：\n{csv_path}\n\n是否继续？",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply != QMessageBox.Yes:
-            return
-
         # 进度对话框
-        self.lufs_progress_dialog = QProgressDialog("正在分析LUFS...", "取消", 0, 100, self)
-        self.lufs_progress_dialog.setWindowTitle("LUFS分析")
-        self.lufs_progress_dialog.setWindowModality(Qt.WindowModal)
-        self.lufs_progress_dialog.setMinimumDuration(0)
-        self.lufs_progress_dialog.show()
+        self.audio_fetch_dialog = QProgressDialog("正在获取Wwise音频对象...", "取消", 0, 100, self)
+        self.audio_fetch_dialog.setWindowTitle("获取音频对象")
+        self.audio_fetch_dialog.setWindowModality(Qt.WindowModal)
+        self.audio_fetch_dialog.setMinimumDuration(0)
+        self.audio_fetch_dialog.setValue(0)
+        self.audio_fetch_dialog.show()
 
-        # 启动线程
-        self.lufs_thread = LufsAnalysisThread(audio_files, csv_path, self)
-        self.lufs_thread.progress.connect(self.lufs_progress_dialog.setValue)
-        self.lufs_thread.status.connect(self.lufs_progress_dialog.setLabelText)
-        def on_finish(csv_path, failed_files):
-            self.lufs_progress_dialog.close()
-            msg = f"分析完成，结果已保存到：\n{csv_path}"
-            if failed_files:
-                msg += f"\n\n以下文件分析失败：\n" + "\n".join(failed_files)
-            QMessageBox.information(self, "分析完成", msg)
-            folder = os.path.dirname(csv_path)
-            if os.name == 'nt':
-                os.startfile(folder)
-            elif os.name == 'posix':
-                os.system(f'open "{folder}"' if sys.platform == 'darwin' else f'xdg-open "{folder}"')
-        def on_failed(msg):
-            self.lufs_progress_dialog.close()
-            if msg == "用户取消操作":
-                QMessageBox.information(self, "已取消", "LUFS分析已取消。")
-            else:
-                QMessageBox.critical(self, "分析失败", msg)
-        self.lufs_thread.finished_ok.connect(on_finish)
-        self.lufs_thread.failed.connect(on_failed)
-        self.lufs_progress_dialog.canceled.connect(self.lufs_thread.cancel)
-        self.lufs_thread.start()
+        # 用线程异步获取音频对象
+        self.audio_fetch_thread = GetAudioSourcesThread()
+        self.audio_fetch_thread.progress.connect(self.audio_fetch_dialog.setValue)
+        self.audio_fetch_thread.status.connect(self.audio_fetch_dialog.setLabelText)
+        def on_audio_files_ok(audio_files):
+            self.audio_fetch_dialog.close()
+            if not audio_files:
+                QMessageBox.information(self, "提示", "未找到音频源文件。")
+                return
+
+            default_csv = os.path.join(os.getcwd(), "Loudness_Analyse.csv")
+            csv_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "选择分析结果保存位置",
+                default_csv,
+                "CSV文件 (*.csv)"
+            )
+            if not csv_path:
+                return
+
+            reply = QMessageBox.question(
+                self, "确认",
+                f"将分析 {len(audio_files)} 个音频文件，结果保存到：\n{csv_path}\n\n是否继续？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            # 进度对话框
+            self.lufs_progress_dialog = QProgressDialog("正在分析LUFS...", "取消", 0, 100, self)
+            self.lufs_progress_dialog.setWindowTitle("LUFS分析")
+            self.lufs_progress_dialog.setWindowModality(Qt.WindowModal)
+            self.lufs_progress_dialog.setMinimumDuration(0)
+            self.lufs_progress_dialog.show()
+
+            # 启动线程
+            self.lufs_thread = LufsAnalysisThread(audio_files, csv_path, self)
+            self.lufs_thread.progress.connect(self.lufs_progress_dialog.setValue)
+            self.lufs_thread.status.connect(self.lufs_progress_dialog.setLabelText)
+            def on_finish(csv_path, failed_files):
+                self.lufs_progress_dialog.close()
+                msg = f"分析完成，结果已保存到：\n{csv_path}"
+                if failed_files:
+                    msg += "\n\n以下文件分析失败："
+                    for  error in failed_files:
+                        msg += f"{error}"
+                self.show_long_message("分析完成", msg)
+                folder = os.path.dirname(csv_path)
+                if os.name == 'nt':
+                    os.startfile(folder)
+                elif os.name == 'posix':
+                    os.system(f'open \"{folder}\"' if sys.platform == 'darwin' else f'xdg-open \"{folder}\"')
+            def on_failed(msg):
+                self.lufs_progress_dialog.close()
+                if msg == "用户取消操作":
+                    QMessageBox.information(self, "已取消", "LUFS分析已取消。")
+                else:
+                    QMessageBox.critical(self, "分析失败", msg)
+            self.lufs_thread.finished_ok.connect(on_finish)
+            self.lufs_thread.failed.connect(on_failed)
+            self.lufs_progress_dialog.canceled.connect(self.lufs_thread.cancel)
+            self.lufs_thread.start()
+
+        def on_audio_files_failed(msg):
+            self.audio_fetch_dialog.close()
+            QMessageBox.critical(self, "获取音频对象失败", msg)
+
+        self.audio_fetch_thread.finished_ok.connect(on_audio_files_ok)
+        self.audio_fetch_thread.failed.connect(on_audio_files_failed)
+        self.audio_fetch_dialog.canceled.connect(self.audio_fetch_thread.terminate)
+        self.audio_fetch_thread.start()
 
 
 
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()  
     app = QApplication(sys.argv)
     try:
         window = Wreaper()

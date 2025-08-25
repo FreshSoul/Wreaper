@@ -5,7 +5,7 @@ a = Analysis(
     ['WreaperRel.py'],
     pathex=[],
     binaries=[],
-    datas=[('WwiseLogo.png', '.'), ('reaperLogo.jpg', '.'), ('test.jpg', '.')],
+    datas=[('WwiseLogo.png', '.'), ('reaperLogo.jpg', '.'), ('test.jpg', '.'), ('Open.png', '.')],
     hiddenimports=['reapy', 'numba', 'audioread.ffdec', 'reapy.reascript_api'],
     hookspath=[],
     hooksconfig={},

@@ -13,7 +13,7 @@ def analyze_loudness_detailed(audio_file_path, window_size=0.4, overlap=0.5):
 
     window_samples = max(1, int(rate * window_size))
 
-    # 若音频短于窗口，零填充到窗口长度，保证至少一个分析块
+    
     if len(data) < window_samples:
         pad = window_samples - len(data)
         if getattr(data, "ndim", 1) == 1:
@@ -92,6 +92,9 @@ def get_audio_sources():
                     bus_ref = item.get('OutputBus')
                     bus_id = bus_ref.get('id') if isinstance(bus_ref, dict) else bus_ref
 
+                    
+
+
                     # 6) ancestors 列表（含每级 @Volume、@MakeUpGain、@OutputBus），用于层级列与 Output Bus 继承回退
                     ancestors_props = client.call("ak.wwise.core.object.get", {
                         "from": {"id": [audio['id']]},
@@ -117,28 +120,47 @@ def get_audio_sources():
                                 bus_id = anc_bus_id
                                 break
 
-                     # 7) 查询目标 Bus 的 BusVolume 与 Volume
-                    bus_bus_volume = None
-                    bus_volume = None
-                    if bus_id:
-                        bus_info = client.call("ak.wwise.core.object.get", {
-                            "from": {"id": [bus_id]},
-                            "options": {"return": ["id", "name", "@BusVolume", "@Volume"]}
-                        })
-                        bus_items = (bus_info or {}).get('return', [])
-                        if bus_items:
-                            bus_bus_volume = bus_items[0].get('@BusVolume')
-                            bus_volume = bus_items[0].get('@Volume')
-
-                    audio_files.append({
-                        "name": item.get('name', ''),
-                        "wwise_path": item.get('path', ''),
-                        "file_path": path,
-                        "duration": item.get('duration', 0),
-                        "OutputBus_BusVolume": bus_bus_volume,  # Bus 的 @BusVolume
-                        "OutputBus_Volume": bus_volume,        # Bus 的 @Volume
-                        "ancestors_list": ancestors_list,
+                    # 7) 查询目标 Bus 的 BusVolume 与 Volume 以及 ancestors
+                bus_bus_volume = None
+                bus_volume = None
+                bus_ancestors_list = []
+                bus_name = ""
+                if bus_id:
+                    bus_info = client.call("ak.wwise.core.object.get", {
+                        "from": {"id": [bus_id]},
+                        "options": {"return": ["id", "name", "@BusVolume", "@Volume"]}
                     })
+                    bus_items = (bus_info or {}).get('return', [])
+                    if bus_items:
+                        bus_bus_volume = bus_items[0].get('@BusVolume')
+                        bus_volume = bus_items[0].get('@Volume')
+                        bus_name = bus_items[0].get('name', '')
+
+                    # 查询 Bus 的 ancestors
+                    bus_ancestors_info = client.call("ak.wwise.core.object.get", {
+                        "from": {"id": [bus_id]},
+                        "transform": [{"select": ["ancestors"]}],
+                        "options": {"return": ["id", "name", "@BusVolume", "@Volume"]}
+                    })
+                    raw_bus_ancestors = (bus_ancestors_info or {}).get('return', [])
+                    for ancestor in raw_bus_ancestors:
+                        bus_ancestors_list.append({
+                            "name": ancestor.get('name'),
+                            "bus_volume": ancestor.get('@BusVolume'),
+                            "volume": ancestor.get('@Volume')
+                        })
+
+                audio_files.append({
+                    "name": item.get('name', ''),
+                    "wwise_path": item.get('path', ''),
+                    "file_path": path,
+                    "duration": item.get('duration', 0),
+                    "OutputBus_Name": bus_name,
+                    "OutputBus_BusVolume": bus_bus_volume,
+                    "OutputBus_Volume": bus_volume,
+                    "OutputBus_ancestors_list": bus_ancestors_list,
+                    "ancestors_list": ancestors_list,
+                })
             return audio_files
     except CannotConnectToWaapiException:
         print("无法连接到WAAPI，请确保Wwise已开启WAAPI。")
@@ -152,20 +174,29 @@ def main():
 
     # 计算最大父级层数
     max_depth = 0
+    max_bus_depth = 0
     for audio in audio_files:
         depth = len(audio.get("ancestors_list", []))
         if depth > max_depth:
             max_depth = depth
+        bus_depth = len(audio.get("OutputBus_ancestors_list", []))
+        if bus_depth > max_bus_depth:
+            max_bus_depth = bus_depth
 
-    # 基础列 + 层级列
+    # 基础列 + 音频对象层级列 + Bus层级列
     base_fields = ["name", "wwise_path", "file_path", "LUFS-I", "LUFS-M-MAX", "音频时长",
-                   "OutPutBus_BusVolume", "OutPutBus_Volume"]
+                   "OutPutBus_Name", "OutPutBus_BusVolume", "OutPutBus_Volume"]
     level_fields = []
     for i in range(1, max_depth + 1):
         level_fields.append(f"父级名{i}")
         level_fields.append(f"父级音量{i}")
         level_fields.append(f"父级MakeUpGain{i}")
-    fieldnames = base_fields + level_fields
+    bus_level_fields = []
+    for i in range(1, max_bus_depth + 1):
+        bus_level_fields.append(f"Bus名{i}")
+        bus_level_fields.append(f"Bus_BusVolume{i}")
+        bus_level_fields.append(f"Bus_Volume{i}")
+    fieldnames = base_fields + level_fields + bus_level_fields
 
     results = []
     for audio in audio_files:
@@ -178,11 +209,12 @@ def main():
             "LUFS-I": integrated,
             "LUFS-M-MAX": max_momentary,
             "音频时长": audio['duration'],
+            "OutPutBus_Name": audio.get('OutputBus_Name', ''),
             "OutPutBus_BusVolume": ("" if audio.get('OutputBus_BusVolume') is None else audio['OutputBus_BusVolume']),
             "OutPutBus_Volume": ("" if audio.get('OutputBus_Volume') is None else audio['OutputBus_Volume']),
         }
 
-        # 填充层级列：按从近到远的顺序写入
+        # 填充音频对象层级列
         ancestors = audio.get("ancestors_list", [])
         for i in range(max_depth):
             name_key = f"父级名{i+1}"
@@ -190,14 +222,32 @@ def main():
             mug_key = f"父级MakeUpGain{i+1}"
             if i < len(ancestors):
                 row[name_key] = ancestors[i].get("name", "")
-                v = ancestors[i].get("volume", None)   # 父级 @Volume
-                m = ancestors[i].get("makeup", None)   # 父级 @MakeUpGain
+                v = ancestors[i].get("volume", None)
+                m = ancestors[i].get("makeup", None)
                 row[vol_key] = v if v is not None else ""
                 row[mug_key] = m if m is not None else ""
             else:
                 row[name_key] = ""
                 row[vol_key] = ""
                 row[mug_key] = ""
+
+        # 填充Bus层级列
+        bus_ancestors = audio.get("OutputBus_ancestors_list", [])
+        for i in range(max_bus_depth):
+            name_key = f"Bus名{i+1}"
+            busvol_key = f"Bus_BusVolume{i+1}"
+            vol_key = f"Bus_Volume{i+1}"
+            if i < len(bus_ancestors):
+                row[name_key] = bus_ancestors[i].get("name", "")
+                bv = bus_ancestors[i].get("bus_volume", None)
+                v = bus_ancestors[i].get("volume", None)
+                row[busvol_key] = bv if bv is not None else ""
+                row[vol_key] = v if v is not None else ""
+            else:
+                row[name_key] = ""
+                row[busvol_key] = ""
+                row[vol_key] = ""
+
         results.append(row)
 
     csv_path = "Loudness_Analyse.csv"
