@@ -44,7 +44,7 @@ class WwiseService:
             with WaapiClient(url=url) as client:
                 result = client.call(
                     "ak.wwise.ui.getSelectedObjects",
-                    options={'return': ['originalFilePath', 'music:playlistRoot']}
+                    options={'return': ['originalFilePath']}
                 )
                 objs = result.get("objects", []) if result else []
                 return [o.get("originalFilePath") for o in objs if o.get("originalFilePath")]

@@ -171,6 +171,9 @@ class Wreaper(QWidget):
         self.button4.clicked.connect(self.execute_rendering)
         button_layout.addWidget(self.button4, 1)
 
+
+
+
         main_layout.addLayout(button_layout)
 
         # 底部状态区域
@@ -623,7 +626,7 @@ class Wreaper(QWidget):
                 os.system(f'open "{output_dir}"' if sys.platform == 'darwin' else f'xdg-open "{output_dir}"')
 
     def _on_analysis_failed(self, error_message):
-        """分析失败处理"""
+        #分析失败处理
         if self.analysis_progress_dialog:
             self.analysis_progress_dialog.close()
             self.analysis_progress_dialog = None
@@ -719,6 +722,78 @@ class Wreaper(QWidget):
         self.audio_fetch_thread.failed.connect(on_audio_files_failed)
         self.audio_fetch_dialog.canceled.connect(self.audio_fetch_thread.terminate)
         self.audio_fetch_thread.start()
+
+
+
+
+"""     def import_wwise_files_and_create_regions(self):
+        
+        self.region_index_map = {}
+        selected_audio_files = self.wwise_service.get_selected_audio_files()
+        print(f"Wwise 选中的音频文件: {selected_audio_files}")
+        if selected_audio_files:
+            for file_path in selected_audio_files:
+                self.remove_readonly_attribute(file_path)
+            try:
+                self.reaper_service.open_audio_in_reaper(selected_audio_files)
+                num_items = rpp.CountSelectedMediaItems(0)
+                last_end = None
+                for i in range(num_items):
+                    item = rpp.GetSelectedMediaItem(0, i)
+                    length = rpp.GetMediaItemInfo_Value(item, "D_LENGTH")
+                    if last_end is None:
+                        start = rpp.GetMediaItemInfo_Value(item, "D_POSITION")
+                    else:
+                        start = last_end + 1.0
+                        rpp.SetMediaItemInfo_Value(item, "D_POSITION", start)
+                    end = start + length
+                    last_end = end
+                    region_name = os.path.splitext(os.path.basename(selected_audio_files[i]))[0]
+                    idx = rpp.AddProjectMarker2(0, True, start, end, region_name, -1, 0)
+                    self.region_index_map[idx] = selected_audio_files[i]
+                print("导入并创建区间完成。")
+                print(f"region_index_map: {self.region_index_map}")
+            except Exception as e:
+                self.show_error_message("导入音频到Reaper时出错", str(e))
+        else:
+            self.show_error_message("提示", "没有选中的音频文件。")
+
+    def render_selected_regions_to_original_paths(self):
+        
+        if not hasattr(self, "region_index_map") or not self.region_index_map:
+            self.show_error_message("未找到映射", "请先导入音频并创建区间。")
+            return
+
+        retval, num_markers, num_regions, num_total = rpp.CountProjectMarkers(0, 0, 0)
+        rendered = []
+        unmatched = []
+        print(f"region_index_map: {self.region_index_map}")
+        for i in range(num_total):
+            retval, proj, idx, isrgnOut, posOut, rgnendOut, nameOut, markrgnindexnumberOut = rpp.EnumProjectMarkers2(0, i, 0, 0.0, 0.0, '', 0)
+            # 只处理选中的 region（idx < 0）
+            if isrgnOut and idx < 0:
+                region_idx = markrgnindexnumberOut
+                if region_idx in self.region_index_map:
+                    out_path = self.region_index_map[region_idx]
+                    out_dir = os.path.dirname(out_path)
+                    if not os.access(out_dir, os.W_OK):
+                        self.show_error_message("目录不可写", out_dir)
+                        continue
+                    rpp.GetSet_LoopTimeRange(True, False, posOut, rgnendOut, False)
+                    rpp.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, True)
+                    rpp.GetSetProjectInfo(0, "RENDER_TAILFLAG", 32, True)
+                    rpp.GetSetProjectInfo_String(0, "RENDER_FILE", out_dir, True)
+                    rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", os.path.basename(out_path), True)
+                    rpp.Main_OnCommand(41824, 0)
+                    rendered.append(out_path)
+                else:
+                    unmatched.append(region_idx)
+        msg = f"已渲染的文件：{rendered}"
+        if unmatched:
+            msg += f"\n未匹配到原路径的区间索引：{unmatched}"
+        QMessageBox.information(self, "渲染结果", msg)
+ """
+
 
 
 
