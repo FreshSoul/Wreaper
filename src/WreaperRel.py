@@ -8,7 +8,7 @@ import asyncio
 
 from matplotlib import rcParams
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QPushButton, QVBoxLayout, QMessageBox, QLabel,
+    QApplication, QWidget, QPushButton, QVBoxLayout, QGridLayout,QMessageBox, QLabel,
     QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog,QDialog, QTextEdit,QInputDialog
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush, QFont
@@ -156,28 +156,28 @@ class Wreaper(QWidget):
         main_layout.addWidget(separator)
 
         # 中部按钮区
-        button_layout = QVBoxLayout()
+        button_layout = QGridLayout()
         button_layout.setSpacing(12)
 
         self.button2 = self.create_anime_button("启动Reaper", "#000000", "#5E9DD1")
         self.button2.clicked.connect(self.StartReaper)
-        button_layout.addWidget(self.button2, 1)
+        button_layout.addWidget(self.button2, 0, 0, 1, 2)  # 第一行，跨两列居中
 
         self.button3 = self.create_anime_button("导入Reaper", "#000000", "#5E9DD1")
         self.button3.clicked.connect(self.start_reaper_and_open_audio)
-        button_layout.addWidget(self.button3, 1)
+        button_layout.addWidget(self.button3, 1, 0)  # 第二行左
 
-        self.button4 = self.create_anime_button("渲染回Wwise", "#000000", "#5E9DD1")
+        self.button4 = self.create_anime_button("所选Item渲染回Wwise", "#000000", "#5E9DD1")
         self.button4.clicked.connect(self.execute_rendering)
-        button_layout.addWidget(self.button4, 1)
+        button_layout.addWidget(self.button4, 2, 0)  # 第二行右
 
-        self.button5 = self.create_anime_button("导入Reaper并生成区间", "#000000", "#5E9DD1")
+        self.button5 = self.create_anime_button("区间导入Reaper", "#000000", "#FF3848")
         self.button5.clicked.connect(self.import_wwise_files_and_create_regions)
-        button_layout.addWidget(self.button5, 1)
+        button_layout.addWidget(self.button5, 1, 1)  # 第三行左
 
-        self.button6 = self.create_anime_button("所有区间渲染回Wwise", "#000000", "#5E9DD1")
+        self.button6 = self.create_anime_button("区间渲染回Wwise", "#000000", "#FF3848")
         self.button6.clicked.connect(self.Region_rendering)
-        button_layout.addWidget(self.button6, 1)
+        button_layout.addWidget(self.button6, 2, 1)  # 第三行右
 
         main_layout.addLayout(button_layout)
 
