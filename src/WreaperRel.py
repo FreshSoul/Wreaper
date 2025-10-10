@@ -171,8 +171,13 @@ class Wreaper(QWidget):
         self.button4.clicked.connect(self.execute_rendering)
         button_layout.addWidget(self.button4, 1)
 
+        self.button5 = self.create_anime_button("导入Reaper并生成区间", "#000000", "#5E9DD1")
+        self.button5.clicked.connect(self.import_wwise_files_and_create_regions)
+        button_layout.addWidget(self.button5, 1)
 
-
+        self.button6 = self.create_anime_button("所有区间渲染回Wwise", "#000000", "#5E9DD1")
+        self.button6.clicked.connect(self.Region_rendering)
+        button_layout.addWidget(self.button6, 1)
 
         main_layout.addLayout(button_layout)
 
@@ -360,7 +365,8 @@ class Wreaper(QWidget):
                 QMessageBox.information(self, "已取消", "已取消更新。")
             else:
                 QMessageBox.warning(self, "下载失败", f"下载失败：{error_msg}")
-
+                
+##############################################################################################
     # 路径/文件与 Reaper 相关
     def get_default_reaper_path(self):
         if os.path.exists(CONFIG_FILE):
@@ -519,8 +525,98 @@ class Wreaper(QWidget):
         if should_render:
             rpp.Main_OnCommand(41824, 0)
 
+###########################################################################################
+    # 区间渲染相关
+    #Wwise-->reaper
+    def _on_got_wwise_files_Region(self, selected_audio_files):
+        if getattr(self, "fetch_dialog", None):
+            self.fetch_dialog.close()
+            self.fetch_dialog = None
+        if selected_audio_files:
+            for file_path in selected_audio_files:
+                self.remove_readonly_attribute(file_path)
+            try:
+                self.reaper_service.open_audioRegion_in_reaper(selected_audio_files)
+            except Exception as e:
+                self.show_error_message("导入音频到Reaper时出错", f"{e}\n请尝试重启Wreaper")
+        else:
+            print("没有选中的音频文件。")
+    
+    def import_wwise_files_and_create_regions(self):
+        try:
+            reaper_path = self.get_default_reaper_path()
+            if reaper_path is None:
+                print("未找到默认路径，您需要手动选择 Reaper 启动文件。")
+                reaper_path = self.select_new_reaper_project()
+                if reaper_path:
+                    self.save_reaper_path(reaper_path)
+
+            if not self.reaper_service.is_reaper_running():
+                self.reaper_service.start_reaper(reaper_path)
+                time.sleep(1)
+
+            # 子线程获取，避免阻塞
+            self.fetch_dialog = QProgressDialog("正在从 Wwise 获取选中对象...", None, 0, 0, self)
+            self.fetch_dialog.setWindowTitle("请稍候")
+            self.fetch_dialog.setCancelButton(None)
+            self.fetch_dialog.setWindowModality(Qt.WindowModal)
+            self.fetch_dialog.show()
+
+            self.wwise_thread = GetSelectedFilesThread(self.wwise_service, self)
+            self.wwise_thread.finished_ok.connect(self._on_got_wwise_files_Region)
+            self.wwise_thread.failed.connect(self._on_wwise_files_failed)
+            self.wwise_thread.start()
+
+        except Exception as e:
+            self.show_error_message("启动Reaper时出错", str(e))
+            print(f"错误详情: {traceback.format_exc()}")
+
+    #reaper-->Wwise
+    def Region_rendering(self):
+        if not self.reaper_service.is_reaper_running():
+            QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
+            return
+
+        selected_audio_files = self.get_selected_audio_files()
+        wwise_map = {os.path.splitext(os.path.basename(p))[0]: p for p in selected_audio_files}
+        unmatched = []
+        should_render = False
+        num_regions = rpp.CountProjectMarkers(0, 0, 0)
+        output_dir = None
+
+        for i in range(num_regions[3]+1):
+            fs = rpp.SNM_CreateFastString("")
+            rpp.SNM_GetProjectMarkerName(0, i, 1, fs)
+            region_name = rpp.SNM_GetFastString(fs)
+            if region_name in wwise_map:
+                source_path = wwise_map[region_name]
+                parent_dir = os.path.dirname(source_path)
+                if not os.access(parent_dir, os.W_OK):
+                    self.show_error_message("目录不可写", parent_dir)
+                    rpp.SNM_DeleteFastString(fs)
+                    return
+                output_dir = parent_dir 
+                should_render = True
+            else:
+                if region_name:
+                    unmatched.append(region_name)
+            
+
+        if unmatched:
+            self.show_error_message("文件名不匹配", "以下Reaper区间未在Wwise中选中，请全部选中后覆盖渲染：\n" + "\n".join(unmatched))
+
+        if should_render and output_dir:
+            
+            rpp.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, True)
+            rpp.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", 3, True)
+            rpp.GetSetProjectInfo_String(0, "RENDER_FILE", output_dir, True)
+            rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$region", True)
+            rpp.Main_OnCommand(41824, 0)
 
 
+
+
+###########################################################################################
     def audio_analysis_2d(self):
         # 选择音频文件夹
         input_dir = audio_analysis.select_directory_2d("请选择包含音频文件的文件夹")
@@ -726,73 +822,7 @@ class Wreaper(QWidget):
 
 
 
-"""     def import_wwise_files_and_create_regions(self):
-        
-        self.region_index_map = {}
-        selected_audio_files = self.wwise_service.get_selected_audio_files()
-        print(f"Wwise 选中的音频文件: {selected_audio_files}")
-        if selected_audio_files:
-            for file_path in selected_audio_files:
-                self.remove_readonly_attribute(file_path)
-            try:
-                self.reaper_service.open_audio_in_reaper(selected_audio_files)
-                num_items = rpp.CountSelectedMediaItems(0)
-                last_end = None
-                for i in range(num_items):
-                    item = rpp.GetSelectedMediaItem(0, i)
-                    length = rpp.GetMediaItemInfo_Value(item, "D_LENGTH")
-                    if last_end is None:
-                        start = rpp.GetMediaItemInfo_Value(item, "D_POSITION")
-                    else:
-                        start = last_end + 1.0
-                        rpp.SetMediaItemInfo_Value(item, "D_POSITION", start)
-                    end = start + length
-                    last_end = end
-                    region_name = os.path.splitext(os.path.basename(selected_audio_files[i]))[0]
-                    idx = rpp.AddProjectMarker2(0, True, start, end, region_name, -1, 0)
-                    self.region_index_map[idx] = selected_audio_files[i]
-                print("导入并创建区间完成。")
-                print(f"region_index_map: {self.region_index_map}")
-            except Exception as e:
-                self.show_error_message("导入音频到Reaper时出错", str(e))
-        else:
-            self.show_error_message("提示", "没有选中的音频文件。")
 
-    def render_selected_regions_to_original_paths(self):
-        
-        if not hasattr(self, "region_index_map") or not self.region_index_map:
-            self.show_error_message("未找到映射", "请先导入音频并创建区间。")
-            return
-
-        retval, num_markers, num_regions, num_total = rpp.CountProjectMarkers(0, 0, 0)
-        rendered = []
-        unmatched = []
-        print(f"region_index_map: {self.region_index_map}")
-        for i in range(num_total):
-            retval, proj, idx, isrgnOut, posOut, rgnendOut, nameOut, markrgnindexnumberOut = rpp.EnumProjectMarkers2(0, i, 0, 0.0, 0.0, '', 0)
-            # 只处理选中的 region（idx < 0）
-            if isrgnOut and idx < 0:
-                region_idx = markrgnindexnumberOut
-                if region_idx in self.region_index_map:
-                    out_path = self.region_index_map[region_idx]
-                    out_dir = os.path.dirname(out_path)
-                    if not os.access(out_dir, os.W_OK):
-                        self.show_error_message("目录不可写", out_dir)
-                        continue
-                    rpp.GetSet_LoopTimeRange(True, False, posOut, rgnendOut, False)
-                    rpp.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, True)
-                    rpp.GetSetProjectInfo(0, "RENDER_TAILFLAG", 32, True)
-                    rpp.GetSetProjectInfo_String(0, "RENDER_FILE", out_dir, True)
-                    rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", os.path.basename(out_path), True)
-                    rpp.Main_OnCommand(41824, 0)
-                    rendered.append(out_path)
-                else:
-                    unmatched.append(region_idx)
-        msg = f"已渲染的文件：{rendered}"
-        if unmatched:
-            msg += f"\n未匹配到原路径的区间索引：{unmatched}"
-        QMessageBox.information(self, "渲染结果", msg)
- """
 
 
 

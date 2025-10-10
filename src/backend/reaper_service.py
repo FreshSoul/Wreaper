@@ -22,3 +22,23 @@ class ReaperService:
     def open_audio_in_reaper(self, audio_paths):
         for audio_path in audio_paths:
             rpp.InsertMedia(audio_path, 1)
+    
+    def open_audioRegion_in_reaper(self, audio_paths):
+        last_end = None
+        for audio_path in audio_paths:
+            # 插入音频
+            rpp.InsertMedia(audio_path, 1)
+            # 获取最后一个插入的 item
+            num_items = rpp.CountMediaItems(0)
+            item = rpp.GetMediaItem(0, num_items - 1)
+            length = rpp.GetMediaItemInfo_Value(item, "D_LENGTH")
+            if last_end is None:
+                start = rpp.GetMediaItemInfo_Value(item, "D_POSITION")
+            else:
+                start = last_end + 1.0  # 上一个区间结束后1秒
+                rpp.SetMediaItemInfo_Value(item, "D_POSITION", start)
+            end = start + length
+            last_end = end
+            region_name = os.path.splitext(os.path.basename(audio_path))[0]
+            rpp.AddProjectMarker2(0, True, start, end, region_name, -1, 0)
+                
