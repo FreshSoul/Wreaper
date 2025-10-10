@@ -9,7 +9,7 @@ import asyncio
 from matplotlib import rcParams
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QMessageBox, QLabel,
-    QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog,QDialog, QTextEdit
+    QHBoxLayout, QProgressDialog, QSizePolicy, QMenuBar, QFileDialog,QDialog, QTextEdit,QInputDialog
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QBrush, QFont
 from PyQt5.QtCore import Qt, QTimer, QSettings, QThread, pyqtSignal
@@ -488,6 +488,19 @@ class Wreaper(QWidget):
         if not self.reaper_service.is_reaper_running():
             QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
             return
+        
+        
+        # 采样率选择
+        sample_rates = ["32000","44100", "48000", "96000",]
+        sr, ok = QInputDialog.getItem(self, "选择采样率", "采样率 (Hz):", sample_rates, 2, False)
+        if not ok:
+            return
+
+        # 通道数选择
+        channels = ["1", "2", "4", "6", "8"]
+        ch, ok = QInputDialog.getItem(self, "选择通道数", "通道数:", channels, 0, False)
+        if not ok:
+            return
     
         selected_audio_files = self.get_selected_audio_files()
         num_items = rpp.CountSelectedMediaItems(0)
@@ -499,6 +512,8 @@ class Wreaper(QWidget):
         unmatched = []
         should_render = False
 
+        
+        
         for i in range(num_items):
             item = rpp.GetSelectedMediaItem(0, i)
             take = rpp.GetActiveTake(item)
@@ -515,6 +530,8 @@ class Wreaper(QWidget):
                 rpp.GetSetProjectInfo_String(0, "RENDER_FILE", parent_dir, True)
                 rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$item", True)
                 rpp.ShowConsoleMsg(f"已覆盖渲染: {source_path}\n")
+                rpp.GetSetProjectInfo(0, "RENDER_SRATE", int(sr), True)      # 设置采样率
+                rpp.GetSetProjectInfo(0, "RENDER_CHANNELS", int(ch), True) 
                 should_render = True
             else:
                 unmatched.append(take_name)
@@ -577,6 +594,20 @@ class Wreaper(QWidget):
             QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
             return
 
+
+        # 采样率选择
+        sample_rates = ["32000","44100", "48000", "96000",]
+        sr, ok = QInputDialog.getItem(self, "选择采样率", "采样率 (Hz):", sample_rates, 2, False)
+        if not ok:
+            return
+
+        # 通道数选择
+        channels = ["1", "2", "4", "6", "8"]
+        ch, ok = QInputDialog.getItem(self, "选择通道数", "通道数:", channels, 0, False)
+        if not ok:
+            return
+        
+        
         selected_audio_files = self.get_selected_audio_files()
         wwise_map = {os.path.splitext(os.path.basename(p))[0]: p for p in selected_audio_files}
         unmatched = []
@@ -611,6 +642,8 @@ class Wreaper(QWidget):
             rpp.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", 3, True)
             rpp.GetSetProjectInfo_String(0, "RENDER_FILE", output_dir, True)
             rpp.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$region", True)
+            rpp.GetSetProjectInfo(0, "RENDER_SRATE", int(sr), True)      # 设置采样率
+            rpp.GetSetProjectInfo(0, "RENDER_CHANNELS", int(ch), True) 
             rpp.Main_OnCommand(41824, 0)
 
 
