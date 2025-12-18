@@ -1,17 +1,19 @@
 import sys
+import socket
 import pandas as pd
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHBoxLayout, QLabel, QHeaderView, QPushButton, QFileDialog
+    QHBoxLayout, QLabel, QHeaderView, QPushButton, QFileDialog,QMessageBox,QMenu
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QBrush
-from waapi import WaapiClient
+from waapi import WaapiClient, CannotConnectToWaapiException
+
 
 class LoudnessSearchUI(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("响度报告搜索")
+        self.setWindowTitle("响度报告")
         self.resize(1000, 650)
         self.layout = QVBoxLayout(self)
         self.highlighted_paths = set()
@@ -66,6 +68,10 @@ class LoudnessSearchUI(QWidget):
         # 只保留一个表格控件
         self.table = QTableWidget(self)
         self.layout.addWidget(self.table)
+        
+        # 表格右键菜单：复制 wwise_path
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.on_table_context_menu)
 
         # 绑定回车事件
         self.search_box.returnPressed.connect(self.on_search)
@@ -116,6 +122,29 @@ class LoudnessSearchUI(QWidget):
                 self.df = pd.DataFrame(columns=["LUFS-I-Ingame", "LUFS-M-MAX-Ingame", "wwise_path"])
                 self.show_data(self.df)
                 print("CSV读取失败：", e)
+    def on_table_context_menu(self, pos):
+        """表格右键菜单：在 wwise_path 列上右键可复制路径"""
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+
+        row = item.row()
+        col = item.column()
+        if col != 2:  # 只在 wwise_path 列提供复制
+            return
+
+        path_item = self.table.item(row, 2)
+        if not path_item:
+            return
+        wwise_path = path_item.text().strip()
+        if not wwise_path:
+            return
+
+        menu = QMenu(self)
+        act_copy = menu.addAction("复制路径")
+        selected = menu.exec_(self.table.viewport().mapToGlobal(pos))
+        if selected == act_copy:
+            QApplication.clipboard().setText(wwise_path)
 
     def show_data(self, df):
         self.table.setRowCount(len(df))
@@ -232,25 +261,80 @@ class LoudnessSearchUI(QWidget):
             rows.append({"LUFS-I-Ingame": lufs_i, "LUFS-M-MAX-Ingame": lufs_m, "wwise_path": wwise_path})
         return pd.DataFrame(rows)
 
-    def on_double_click(self, row, col):
-        wwise_path = self.table.item(row, 2).text()
+    def _is_waapi_port_open(self, host="127.0.0.1", port=8080, timeout=0.5):
+        """快速探测 WAAPI 端口是否可用，避免阻塞或崩溃"""
         try:
-            with WaapiClient() as client:
-                result = client.call("ak.wwise.core.object.get", {
-                    "from": {"path": [wwise_path]},
-                    "options": {"return": ["id"]}
-                })
-                if result["return"]:
-                    object_id = result["return"][0]["id"]
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except OSError:
+            return False
+
+    def on_double_click(self, row, col):
+        item = self.table.item(row, 2)  # 第 3 列是 wwise_path
+        if not item:
+            return
+        wwise_path = item.text().strip()
+        if not wwise_path:
+            return
+
+        # 先检测 WAAPI 端口，未开就直接返回
+        if not self._is_waapi_port_open():
+            try:
+                QMessageBox.warning(
+                    self,
+                    "WAAPI 未连接",
+                    "未检测到 Wwise 的 WAAPI 端口（127.0.0.1:8080）。\n"
+                    "请先在 Wwise 中启用 WAAPI 或打开 Wwise，然后再双击表格。"
+                )
+            except Exception:
+                pass
+            return
+        try:
+            try:
+                with WaapiClient() as client:
+                    result = client.call("ak.wwise.core.object.get", {
+                        "from": {"path": [wwise_path]},
+                        "options": {"return": ["id","parent"]}
+                    })
+                    # 这里统一处理“WWISE 中不存在该对象”的情况
+                    if (not result) or ("return" not in result) or (not result["return"]):
+                        try:
+                            QMessageBox.information(
+                                self,
+                                "WWISE 中未找到对象",
+                                f"当前 Wwise 工程中未找到此路径对应的对象：\n{wwise_path}"
+                            )
+                        except Exception:
+                            pass
+                        return
+
+                    object_info = result["return"][0]
+                    object_id = object_info.get("id")
+                    parent_info = object_info.get("parent", {})
+                    parent_id = parent_info.get("id")
+
+                    if not object_id:
+                        QMessageBox.information(
+                            self,
+                            "WWISE 中未找到对象",
+                            f"返回结果中没有有效对象 ID：\n{wwise_path}"
+                        )
+                        return
+
+                    # 正常操作
                     client.call("ak.wwise.ui.commands.execute", {
                         "command": "FindInProjectExplorerSelectionChannel1",
                         "objects": [object_id]
                     })
-                else:
-                    print("未找到该路径的对象：", wwise_path)
+                    if parent_id:
+                        client.call("ak.wwise.ui.commands.execute", {
+                            "command": "OpenInNewTab",
+                            "objects": [parent_id]
+                        })
+            except CannotConnectToWaapiException as e:
+                QMessageBox.warning(self, "WAAPI 连接失败", str(e))
         except Exception as e:
-            print("WAAPI 连接失败或跳转失败：", e)
-
+            print("on_double_click异常：", e)
 def show_loudness_report(parent=None):
     win = LoudnessSearchUI()
     # 不要 setParent，不要继承主窗口样式，只继承字体（可选）
