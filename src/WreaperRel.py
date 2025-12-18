@@ -27,6 +27,7 @@ from AudioAnalyse import AudioAnalyse as audio_analysis
 from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread
 from AudioAnalyse import AnalyseLUFS_Game_Wwise as lufs_game_wwise
 from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread, LufsAnalysisThread
+from ForWwise.LoudnessReport import show_loudness_report
 
 rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
 rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
@@ -120,7 +121,8 @@ class Wreaper(QWidget):
         act_audio_centroid = menu_audio.addAction("音频频谱质心分析")
         act_audio_3d = menu_audio.addAction("音频3D频谱分析")
         act_audio_2d = menu_audio.addAction("音频2D频谱分析")
-        act_audio_lufs = menu_audio.addAction("Wwise中资源响度路由与游戏内响度")
+        act_audio_lufs = menu_audio.addAction("响度数据（Wwise项目）")
+        act_loudness_report = menu_audio.addAction("响度报告")
         
         # QAction.triggered 会传 bool(checked)，用 lambda 吞掉并传手动标记
         act_config.triggered.connect(lambda checked=False: self.Select_reaperconfig())
@@ -130,6 +132,7 @@ class Wreaper(QWidget):
         act_audio_3d.triggered.connect(lambda checked=False: self.audio_analysis_3d())
         act_audio_2d.triggered.connect(lambda checked=False: self.audio_analysis_2d())
         act_audio_lufs.triggered.connect(lambda checked=False: self._analyse_audio_files_game_wwise())
+        act_loudness_report.triggered.connect(lambda checked=False: self.open_loudness_report())
 
         main_layout.setMenuBar(menubar)
 
@@ -851,7 +854,14 @@ class Wreaper(QWidget):
         self.audio_fetch_thread.failed.connect(on_audio_files_failed)
         self.audio_fetch_dialog.canceled.connect(self.audio_fetch_thread.terminate)
         self.audio_fetch_thread.start()
-
+    def open_loudness_report(self):
+        # 保证窗口不会被垃圾回收
+        if not hasattr(self, "_loudness_report_win") or self._loudness_report_win is None:
+            self._loudness_report_win = show_loudness_report(self)
+        else:
+            self._loudness_report_win.show()
+            self._loudness_report_win.raise_()
+            self._loudness_report_win.activateWindow()
 
 
 
