@@ -28,57 +28,64 @@ class LoudnessSearchUI(QWidget):
         super().__init__()
         self.setWindowTitle("响度报告")
         self.resize(1000, 650)
+
+        # 主布局：增加边距与间距
         self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(16, 16, 16, 16)
+        self.layout.setSpacing(12)
+
         self.highlighted_paths = {}          # 路径 -> 行高亮颜色
         self.highlight_color = QColor(255, 200, 200)
         self.csv_path = None
         self._name_col_auto_sized = False
         self._path_col_auto_sized = False
+
         # 搜索框和范围筛选
-        filter_layout = QHBoxLayout()
+        self.filter_layout = QHBoxLayout()
+        self.filter_layout.setSpacing(8)
 
         # 打开文件按钮
         self.open_btn = QPushButton("打开CSV", self)
-        filter_layout.addWidget(self.open_btn)
+        self.filter_layout.addWidget(self.open_btn)
         self.open_btn.clicked.connect(self.open_csv)
 
         self.search_box = QLineEdit(self)
         self.search_box.setPlaceholderText("输入关键字搜索")
-        filter_layout.addWidget(self.search_box)
+        self.filter_layout.addWidget(self.search_box)
 
-        filter_layout.addWidget(QLabel("LUFS-I-Ingame范围:"))
+        self.filter_layout.addWidget(QLabel("LUFS-I范围:"))
         self.lufs_i_min = QLineEdit(self)
         self.lufs_i_min.setPlaceholderText("最小值")
         self.lufs_i_min.setFixedWidth(60)
-        filter_layout.addWidget(self.lufs_i_min)
-        filter_layout.addWidget(QLabel("~"))
+        self.filter_layout.addWidget(self.lufs_i_min)
+        self.filter_layout.addWidget(QLabel("~"))
         self.lufs_i_max = QLineEdit(self)
         self.lufs_i_max.setPlaceholderText("最大值")
         self.lufs_i_max.setFixedWidth(60)
-        filter_layout.addWidget(self.lufs_i_max)
+        self.filter_layout.addWidget(self.lufs_i_max)
 
-        filter_layout.addWidget(QLabel("LUFS-M-MAX-Ingame范围:"))
+        self.filter_layout.addWidget(QLabel("LUFS-M范围:"))
         self.lufs_m_min = QLineEdit(self)
         self.lufs_m_min.setPlaceholderText("最小值")
         self.lufs_m_min.setFixedWidth(60)
-        filter_layout.addWidget(self.lufs_m_min)
-        filter_layout.addWidget(QLabel("~"))
+        self.filter_layout.addWidget(self.lufs_m_min)
+        self.filter_layout.addWidget(QLabel("~"))
         self.lufs_m_max = QLineEdit(self)
         self.lufs_m_max.setPlaceholderText("最大值")
         self.lufs_m_max.setFixedWidth(60)
-        filter_layout.addWidget(self.lufs_m_max)
+        self.filter_layout.addWidget(self.lufs_m_max)
 
         # 添加高亮按钮
         self.highlight_btn = QPushButton("设置颜色", self)
-        filter_layout.addWidget(self.highlight_btn)
+        self.filter_layout.addWidget(self.highlight_btn)
         self.highlight_btn.clicked.connect(self.highlight_in_range_rows)
 
         # 添加搜索按钮
         self.search_btn = QPushButton("搜索", self)
-        filter_layout.addWidget(self.search_btn)
+        self.filter_layout.addWidget(self.search_btn)
         self.search_btn.clicked.connect(self.on_search)
 
-        self.layout.addLayout(filter_layout)
+        self.layout.addLayout(self.filter_layout)
 
         # 只保留一个表格控件
         self.table = QTableWidget(self)
@@ -111,10 +118,6 @@ class LoudnessSearchUI(QWidget):
 
         font = QFont()
         font.setBold(True)
-        
-        
-        
-        
         self.table.horizontalHeader().setFont(font)
         self.table.verticalHeader().setDefaultSectionSize(28)
         self.table.verticalHeader().setVisible(False)
@@ -124,6 +127,126 @@ class LoudnessSearchUI(QWidget):
         self.table.setFont(QFont("微软雅黑", 10))
         self.table.cellDoubleClicked.connect(self.on_double_click)
 
+        # 应用苹果风格样式
+        self._apply_apple_style()
+
+    def _apply_apple_style(self):
+        """简单仿苹果风格的全局样式"""
+        # 基础字体：优先 SF Pro，其次 Segoe UI，再次 微软雅黑
+        base_font = QFont("SF Pro Display", 10)
+        if not base_font.exactMatch():
+            base_font = QFont("Segoe UI", 10)
+        if not base_font.exactMatch():
+            base_font = QFont("微软雅黑", 10)
+        self.setFont(base_font)
+
+        # 统一关闭明显的表格网格线，更扁平
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+
+        self.setStyleSheet("""
+        QWidget {
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            font-size: 13px;
+        }
+
+        QLineEdit {
+            border-radius: 6px;
+            padding: 4px 8px;
+            border: 1px solid #d2d2d7;
+            background-color: #ffffff;
+        }
+        QLineEdit:focus {
+            border: 1px solid #007aff;
+            background-color: #ffffff;
+        }
+
+        QLabel {
+            color: #3a3a3c;
+        }
+
+        QPushButton {
+            border-radius: 8px;
+            padding: 6px 14px;
+            border: none;
+            background-color: #007aff;
+            color: #ffffff;
+            font-weight: 500;
+        }
+        QPushButton:hover {
+            background-color: #1580ff;
+        }
+        QPushButton:pressed {
+            background-color: #0060df;
+        }
+        QPushButton:disabled {
+            background-color: #c7c7cc;
+            color: #ffffff;
+        }
+
+        QTableWidget {
+            background-color: #ffffff;
+            border-radius: 10px;
+            border: 1px solid #d2d2d7;
+            gridline-color: #e5e5ea;
+            selection-background-color: #d0e3ff;
+            selection-color: #1d1d1f;
+        }
+
+        QHeaderView::section {
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            border: none;
+            border-bottom: 1px solid #d2d2d7;
+            padding: 6px 8px;
+            font-weight: 600;
+        }
+
+        QTableCornerButton::section {
+            background-color: #f5f5f7;
+            border: none;
+            border-bottom: 1px solid #d2d2d7;
+            border-right: 1px solid #d2d2d7;
+        }
+
+        QScrollBar:vertical {
+            background: transparent;
+            width: 10px;
+            margin: 4px 2px 4px 0;
+        }
+        QScrollBar::handle:vertical {
+            background: rgba(0,0,0,0.25);
+            border-radius: 5px;
+            min-height: 20px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: rgba(0,0,0,0.35);
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {
+            height: 0;
+        }
+
+        QScrollBar:horizontal {
+            background: transparent;
+            height: 10px;
+            margin: 0 4px 2px 4px;
+        }
+        QScrollBar::handle:horizontal {
+            background: rgba(0,0,0,0.25);
+            border-radius: 5px;
+            min-width: 20px;
+        }
+        QScrollBar::handle:horizontal:hover {
+            background: rgba(0,0,0,0.35);
+        }
+        QScrollBar::add-line:horizontal,
+        QScrollBar::sub-line:horizontal {
+            width: 0;
+        }
+        """)
+    
     def open_csv(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "选择CSV文件", "", "CSV Files (*.csv)")
         if file_path:

@@ -1,4 +1,4 @@
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 CONFIG_FILE = "reaperconfig.txt"
 
 
