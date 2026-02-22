@@ -220,7 +220,7 @@ class LufsAnalysisThread(QThread):
             # 基础列 + 音频对象层级列 + Bus层级列
             base_fields = [
                 "name", "wwise_path", "file_path", "LUFS-I", "LUFS-M-MAX", "音频时长",
-                "OutPutBus_Name", "OutPutBus_BusVolume", "OutPutBus_Volume"
+                "VolumeOffset", "OutPutBus_Name", "OutPutBus_BusVolume", "OutPutBus_Volume"
             ]
             bus_level_fields = []
             for i in range(1, max_bus_depth + 1):
@@ -265,6 +265,7 @@ class LufsAnalysisThread(QThread):
                             "LUFS-I": integrated,
                             "LUFS-M-MAX": max_momentary,
                             "音频时长": audio['duration'],
+                            "VolumeOffset": ("" if audio.get('VolumeOffset') is None else audio['VolumeOffset']),
                             "OutPutBus_Name": audio.get('OutputBus_Name', ''),
                             "OutPutBus_BusVolume": ("" if audio.get('OutputBus_BusVolume') is None else audio['OutputBus_BusVolume']),
                             "OutPutBus_Volume": ("" if audio.get('OutputBus_Volume') is None else audio['OutputBus_Volume']),
@@ -320,9 +321,15 @@ class LufsAnalysisThread(QThread):
                                 row[name_key] = ""
                                 row[vol_key] = ""
                                 row[mug_key] = ""
+                        # VolumeOffset（AudioFileSource 源级音量偏移）
+                        vol_offset = 0.0
+                        try:
+                            vol_offset = float(audio.get('VolumeOffset', 0) or 0)
+                        except (TypeError, ValueError):
+                            vol_offset = 0.0
                         # 计算前两列
-                        lufs_i_sum = (integrated if integrated is not None else 0) + busvol_sum + obj_sum
-                        lufs_max_sum = (max_momentary if max_momentary is not None else 0) + busvol_sum + obj_sum
+                        lufs_i_sum = (integrated if integrated is not None else 0) + busvol_sum + obj_sum + vol_offset
+                        lufs_max_sum = (max_momentary if max_momentary is not None else 0) + busvol_sum + obj_sum + vol_offset
                         row = {
                             "LUFS-I-Ingame": lufs_i_sum,
                             "LUFS-M-MAX-Ingame": lufs_max_sum,

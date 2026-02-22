@@ -81,7 +81,7 @@ def get_audio_sources():
                 # 5) 拉取源自身属性（含原始文件路径、OutputBus 引用）
                 props = client.call("ak.wwise.core.object.get", {
                     "from": {"id": [audio['id']]},
-                    "options": {"return": ["originalWavFilePath", "name", "path", "duration", "OutputBus"]}
+                    "options": {"return": ["originalWavFilePath", "name", "path", "duration", "OutputBus", "@VolumeOffset"]}
                 })
                 for item in (props or {}).get('return', []):
                     path = item.get('originalWavFilePath')
@@ -155,6 +155,7 @@ def get_audio_sources():
                     "wwise_path": item.get('path', ''),
                     "file_path": path,
                     "duration": item.get('duration', 0),
+                    "VolumeOffset": item.get('@VolumeOffset'),
                     "OutputBus_Name": bus_name,
                     "OutputBus_BusVolume": bus_bus_volume,
                     "OutputBus_Volume": bus_volume,
@@ -185,7 +186,7 @@ def main():
 
     # 基础列 + 音频对象层级列 + Bus层级列
     base_fields = ["name", "wwise_path", "file_path", "LUFS-I", "LUFS-M-MAX", "音频时长",
-                   "OutPutBus_Name", "OutPutBus_BusVolume", "OutPutBus_Volume"]
+                   "VolumeOffset", "OutPutBus_Name", "OutPutBus_BusVolume", "OutPutBus_Volume"]
     level_fields = []
     for i in range(1, max_depth + 1):
         level_fields.append(f"父级名{i}")
@@ -209,6 +210,7 @@ def main():
             "LUFS-I": integrated,
             "LUFS-M-MAX": max_momentary,
             "音频时长": audio['duration'],
+            "VolumeOffset": ("" if audio.get('VolumeOffset') is None else audio['VolumeOffset']),
             "OutPutBus_Name": audio.get('OutputBus_Name', ''),
             "OutPutBus_BusVolume": ("" if audio.get('OutputBus_BusVolume') is None else audio['OutputBus_BusVolume']),
             "OutPutBus_Volume": ("" if audio.get('OutputBus_Volume') is None else audio['OutputBus_Volume']),

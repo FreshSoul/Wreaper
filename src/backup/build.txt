@@ -1,0 +1,1 @@
+pyinstaller --clean --noconsole --onefile --name Wreaper --icon=favicon.ico --add-data "WwiseLogo.png;." --add-data "reaperLogo.jpg;." --add-data "test.jpg;." --add-data "Open.png;."  --hidden-import reapy  --hidden-import numba --hidden-import audioread.ffdec --hidden-import reapy.reascript_api  WreaperRel.py

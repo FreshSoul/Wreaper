@@ -1,19 +1,33 @@
-import subprocess
-import sys
-import time
+from waapi import WaapiClient, CannotConnectToWaapiException
 
+def getaudio_sources():
+    with WaapiClient() as client:
+        # 第一步：获取目标对象下的 AudioFileSource 子对象
+        result = client.call("ak.wwise.core.object.get", {
+            "from": {
+                "path": ["\\Actor-Mixer Hierarchy\\X6_Audio\\X6_Audio\\X6_Audio\\X6_CD\\X6_CD\\CD_2_0\\CD_2_0\\Sfx_q102101_1_d1_cd_06"]
+            },
+            "options": {
+                "return": ["id", "name", "type"]
+            }
+        })
+        print("对象信息:", result)
 
-def restart_application():
-    """启动应用并等待应用退出"""
-    # 获取当前脚本路径
-    script_path = sys.argv[0]
+        if result and "return" in result:
+            obj_id = result["return"][0]["id"]
 
-    # 启动当前应用程序
-    process = subprocess.Popen([sys.executable, 'wreaper.py'])
+            # 第二步：获取该对象的 AudioFileSource 子对象
+            sources = client.call("ak.wwise.core.object.get", {
+                "from": {
+                    "id": [obj_id]
+                },
+                "transform": [
+                    {"select": ["children"]}
+                ],
+                "options": {
+                    "return": ["id", "name", "type", "@VolumeOffset"]
+                }
+            })
+            print("音频源信息:", sources)
 
-    # 等待应用退出
-    process.wait()
-
-
-if __name__ == "__main__":
-    restart_application()
+getaudio_sources()

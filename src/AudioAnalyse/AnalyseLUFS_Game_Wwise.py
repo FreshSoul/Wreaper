@@ -84,10 +84,24 @@ def get_audio_sources(progress_callback=None, status_callback=None):
                 if status_callback:
                     status_callback(f"正在获取: {audio.get('name', '')} ({idx+1}/{total})")
 
-                # 5) 拉取源自身属性（含原始文件路径、OutputBus 引用）
+                # 5) 检查该音频源是否为父级 Sound 的 ActiveSource（被 "Use" 选中的源）
+                parent_info = client.call("ak.wwise.core.object.get", {
+                    "from": {"id": [audio['id']]},
+                    "transform": [{"select": ["parent"]}],
+                    "options": {"return": ["id", "ActiveSource"]}
+                })
+                parent_items = (parent_info or {}).get('return', [])
+                if parent_items:
+                    active_ref = parent_items[0].get('ActiveSource')
+                    if active_ref:
+                        active_id = active_ref.get('id') if isinstance(active_ref, dict) else active_ref
+                        if active_id and active_id != audio['id']:
+                            continue  # 跳过非激活的音频源
+
+                # 6) 拉取源自身属性（含原始文件路径、OutputBus 引用）
                 props = client.call("ak.wwise.core.object.get", {
                     "from": {"id": [audio['id']]},
-                    "options": {"return": ["originalWavFilePath", "name", "path", "duration", "OutputBus"]}
+                    "options": {"return": ["originalWavFilePath", "name", "path", "duration", "OutputBus", "@VolumeOffset"]}
                 })
                 for item in (props or {}).get('return', []):
                     path = item.get('originalWavFilePath')
@@ -98,7 +112,7 @@ def get_audio_sources(progress_callback=None, status_callback=None):
                     bus_ref = item.get('OutputBus')
                     bus_id = bus_ref.get('id') if isinstance(bus_ref, dict) else bus_ref
 
-                    # 6) ancestors 列表（含每级 @Volume、@MakeUpGain、@OutputBus），用于层级列与 Output Bus 继承回退
+                    # 7) ancestors 列表（含每级 @Volume、@MakeUpGain、@OutputBus），用于层级列与 Output Bus 继承回退
                     ancestors_props = client.call("ak.wwise.core.object.get", {
                         "from": {"id": [audio['id']]},
                         "transform": [{"select": ["ancestors"]}],
@@ -123,7 +137,7 @@ def get_audio_sources(progress_callback=None, status_callback=None):
                                 bus_id = anc_bus_id
                                 break
 
-                    # 7) 查询目标 Bus 的 BusVolume 与 Volume 以及 ancestors
+                    # 8) 查询目标 Bus 的 BusVolume 与 Volume 以及 ancestors
                     bus_bus_volume = None
                     bus_volume = None
                     bus_ancestors_list = []
@@ -158,6 +172,7 @@ def get_audio_sources(progress_callback=None, status_callback=None):
                         "wwise_path": item.get('path', ''),
                         "file_path": path,
                         "duration": item.get('duration', 0),
+                        "VolumeOffset": item.get('@VolumeOffset'),
                         "OutputBus_Name": bus_name,
                         "OutputBus_BusVolume": bus_bus_volume,
                         "OutputBus_Volume": bus_volume,
