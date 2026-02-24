@@ -23,9 +23,6 @@ from backend.updater import Updater
 from utils.download_thread import DownloadThread
 from utils.resources import resource_path
 from utils.update_runner import replace_and_restart
-from AudioAnalyse import AudioAnalyse as audio_analysis
-from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread
-from AudioAnalyse import AnalyseLUFS_Game_Wwise as lufs_game_wwise
 from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread, LufsAnalysisThread
 from ForWwise.LoudnessReport import show_loudness_report
 
@@ -56,9 +53,6 @@ class GetAudioSourcesThread(QThread):
                 self.finished_ok.emit(audio_files)
         except Exception as e:
             self.failed.emit(str(e))
-
-
-
 
 
 class GetSelectedFilesThread(QThread):
@@ -436,7 +430,8 @@ class Wreaper(QWidget):
             self.show_error_message("Wwise错误", str(e))
             return []
 
-    def start_reaper_and_open_audio(self):
+    def _ensure_reaper_and_fetch_wwise(self, on_success_callback):
+        """公共方法：确保 Reaper 启动，然后异步获取 Wwise 选中文件"""
         try:
             reaper_path = self.get_default_reaper_path()
             if reaper_path is None:
@@ -457,7 +452,7 @@ class Wreaper(QWidget):
             self.fetch_dialog.show()
 
             self.wwise_thread = GetSelectedFilesThread(self.wwise_service, self)
-            self.wwise_thread.finished_ok.connect(self._on_got_wwise_files)
+            self.wwise_thread.finished_ok.connect(on_success_callback)
             self.wwise_thread.failed.connect(self._on_wwise_files_failed)
             self.wwise_thread.start()
 
@@ -465,7 +460,12 @@ class Wreaper(QWidget):
             self.show_error_message("启动Reaper时出错", str(e))
             print(f"错误详情: {traceback.format_exc()}")
 
-    def _on_got_wwise_files(self, selected_audio_files):
+    def start_reaper_and_open_audio(self):
+        self._ensure_reaper_and_fetch_wwise(
+            lambda files: self._on_got_wwise_files(files, use_regions=False)
+        )
+
+    def _on_got_wwise_files(self, selected_audio_files, use_regions=False):
         if getattr(self, "fetch_dialog", None):
             self.fetch_dialog.close()
             self.fetch_dialog = None
@@ -473,7 +473,10 @@ class Wreaper(QWidget):
             for file_path in selected_audio_files:
                 self.remove_readonly_attribute(file_path)
             try:
-                self.reaper_service.open_audio_in_reaper(selected_audio_files)
+                if use_regions:
+                    self.reaper_service.open_audioRegion_in_reaper(selected_audio_files)
+                else:
+                    self.reaper_service.open_audio_in_reaper(selected_audio_files)
             except Exception as e:
                 self.show_error_message("导入音频到Reaper时出错", f"{e}\n请尝试重启Wreaper")
         else:
@@ -485,26 +488,29 @@ class Wreaper(QWidget):
             self.fetch_dialog = None
         self.show_error_message("Wwise错误", message)
 
-    # Reaper -> Wwise（覆盖渲染）
-    def execute_rendering(self):
-        # 检查 Reaper 是否运行
-        if not self.reaper_service.is_reaper_running():
-            QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
-            return
-        
-        
-        # 采样率选择
-        sample_rates = ["32000","44100", "48000", "96000",]
+    # Reaper -> Wwise（渲染通用）
+    def _select_render_params(self):
+        """选择采样率和通道数，返回 (sr, ch) 或 None"""
+        sample_rates = ["32000", "44100", "48000", "96000"]
         sr, ok = QInputDialog.getItem(self, "选择采样率", "采样率 (Hz):", sample_rates, 2, False)
         if not ok:
-            return
-
-        # 通道数选择
+            return None
         channels = ["1", "2", "4", "6", "8"]
         ch, ok = QInputDialog.getItem(self, "选择通道数", "通道数:", channels, 0, False)
         if not ok:
+            return None
+        return sr, ch
+
+    def execute_rendering(self):
+        if not self.reaper_service.is_reaper_running():
+            QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
             return
-    
+
+        params = self._select_render_params()
+        if not params:
+            return
+        sr, ch = params
+
         selected_audio_files = self.get_selected_audio_files()
         num_items = rpp.CountSelectedMediaItems(0)
         if num_items == 0:
@@ -547,70 +553,21 @@ class Wreaper(QWidget):
 
 ###########################################################################################
     # 区间渲染相关
-    #Wwise-->reaper
-    def _on_got_wwise_files_Region(self, selected_audio_files):
-        if getattr(self, "fetch_dialog", None):
-            self.fetch_dialog.close()
-            self.fetch_dialog = None
-        if selected_audio_files:
-            for file_path in selected_audio_files:
-                self.remove_readonly_attribute(file_path)
-            try:
-                self.reaper_service.open_audioRegion_in_reaper(selected_audio_files)
-            except Exception as e:
-                self.show_error_message("导入音频到Reaper时出错", f"{e}\n请尝试重启Wreaper")
-        else:
-            print("没有选中的音频文件。")
-    
     def import_wwise_files_and_create_regions(self):
-        try:
-            reaper_path = self.get_default_reaper_path()
-            if reaper_path is None:
-                print("未找到默认路径，您需要手动选择 Reaper 启动文件。")
-                reaper_path = self.select_new_reaper_project()
-                if reaper_path:
-                    self.save_reaper_path(reaper_path)
+        self._ensure_reaper_and_fetch_wwise(
+            lambda files: self._on_got_wwise_files(files, use_regions=True)
+        )
 
-            if not self.reaper_service.is_reaper_running():
-                self.reaper_service.start_reaper(reaper_path)
-                time.sleep(1)
-
-            # 子线程获取，避免阻塞
-            self.fetch_dialog = QProgressDialog("正在从 Wwise 获取选中对象...", None, 0, 0, self)
-            self.fetch_dialog.setWindowTitle("请稍候")
-            self.fetch_dialog.setCancelButton(None)
-            self.fetch_dialog.setWindowModality(Qt.WindowModal)
-            self.fetch_dialog.show()
-
-            self.wwise_thread = GetSelectedFilesThread(self.wwise_service, self)
-            self.wwise_thread.finished_ok.connect(self._on_got_wwise_files_Region)
-            self.wwise_thread.failed.connect(self._on_wwise_files_failed)
-            self.wwise_thread.start()
-
-        except Exception as e:
-            self.show_error_message("启动Reaper时出错", str(e))
-            print(f"错误详情: {traceback.format_exc()}")
-
-    #reaper-->Wwise
     def Region_rendering(self):
         if not self.reaper_service.is_reaper_running():
             QMessageBox.warning(self, "Reaper未运行", "请先启动 Reaper 再进行渲染操作。")
             return
 
-
-        # 采样率选择
-        sample_rates = ["32000","44100", "48000", "96000",]
-        sr, ok = QInputDialog.getItem(self, "选择采样率", "采样率 (Hz):", sample_rates, 2, False)
-        if not ok:
+        params = self._select_render_params()
+        if not params:
             return
+        sr, ch = params
 
-        # 通道数选择
-        channels = ["1", "2", "4", "6", "8"]
-        ch, ok = QInputDialog.getItem(self, "选择通道数", "通道数:", channels, 0, False)
-        if not ok:
-            return
-        
-        
         selected_audio_files = self.get_selected_audio_files()
         wwise_map = {os.path.splitext(os.path.basename(p))[0]: p for p in selected_audio_files}
         unmatched = []
@@ -653,58 +610,38 @@ class Wreaper(QWidget):
 
 
 ###########################################################################################
-    def audio_analysis_2d(self):
-        # 选择音频文件夹
-        input_dir = audio_analysis.select_directory_2d("请选择包含音频文件的文件夹")
+    def _start_audio_analysis_flow(self, analysis_type):
+        """通用音频分析流程：选择输入/输出文件夹 -> 确认 -> 启动分析"""
+        type_config = {
+            "2d": ("2D频谱分析", "频谱图结果", "生成频谱图"),
+            "3d": ("3D频谱分析", "3D频谱图输出", "生成频谱图"),
+            "centroid": ("频谱质心分析", "频谱质心分析结果", "生成频谱质心分析"),
+        }
+        title, default_folder, action_name = type_config[analysis_type]
+
+        input_dir = QFileDialog.getExistingDirectory(self, "请选择包含音频文件的文件夹")
         if not input_dir:
             return
 
-        # 选择输出文件夹
-        default_output = os.path.join(input_dir, "频谱图结果")
-        output_dir = audio_analysis.select_directory_centroid("请选择输出文件夹", default_output) or default_output
+        default_output = os.path.join(input_dir, default_folder)
+        output_dir = QFileDialog.getExistingDirectory(self, "请选择输出文件夹", default_output) or default_output
 
         reply = QMessageBox.question(
             self, "确认",
-            f"将从:\n{input_dir}\n生成频谱图到:\n{output_dir}\n\n是否继续?",
+            f"将从:\n{input_dir}\n{action_name}到:\n{output_dir}\n\n是否继续?",
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            self._start_audio_analysis("2d", input_dir, output_dir)
+            self._start_audio_analysis(analysis_type, input_dir, output_dir)
+
+    def audio_analysis_2d(self):
+        self._start_audio_analysis_flow("2d")
 
     def audio_analysis_3d(self):
-        input_dir = audio_analysis.select_directory_3d("请选择包含音频文件的文件夹")
-        if not input_dir:
-            return
-        
-        default_output_dir = os.path.join(input_dir, "3D频谱图输出")
-        output_dir = audio_analysis.select_directory_3d("请选择输出文件夹", default_output_dir) or default_output_dir
+        self._start_audio_analysis_flow("3d")
 
-        reply = QMessageBox.question(
-            self, "确认",
-            f"将从:\n{input_dir}\n生成频谱图到:\n{output_dir}\n\n是否继续?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self._start_audio_analysis("3d", input_dir, output_dir)
-            
     def audio_analysis_centroid(self):
-
-        input_dir = audio_analysis.select_directory_centroid("请选择包含音频文件的文件夹")
-        if not input_dir:
-            return
-
-        # 选择输出文件夹
-        default_output = os.path.join(input_dir, "频谱质心分析结果")
-        output_dir = audio_analysis.select_directory_centroid("请选择输出文件夹", default_output) or default_output
-
-        # 使用PyQt5确认对话框（保持与其他功能一致）
-        reply = QMessageBox.question(
-            self, "确认",
-            f"将从:\n{input_dir}\n生成频谱质心分析到:\n{output_dir}\n\n是否继续?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self._start_audio_analysis("centroid", input_dir, output_dir)
+        self._start_audio_analysis_flow("centroid")
 
     def _start_audio_analysis(self, analysis_type, input_dir, output_dir):
         """启动音频分析任务"""
@@ -862,13 +799,6 @@ class Wreaper(QWidget):
             self._loudness_report_win.show()
             self._loudness_report_win.raise_()
             self._loudness_report_win.activateWindow()
-
-
-
-
-
-
-
 
 
 if __name__ == '__main__':

@@ -4,9 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
-from tkinter import Tk, filedialog, messagebox
+from tkinter import Tk, filedialog
 from matplotlib import rcParams
-from tqdm import tqdm
 import warnings
 import soundfile as sf
 from scipy import signal
@@ -62,68 +61,12 @@ def plot_spectrogram_2d(audio_path, output_dir, sr=22050, n_fft=2048, hop_length
         return False, f"处理 {audio_path} 时出错: {str(e)}"
 
 
-def batch_process_audio_2d(input_dir, output_dir):
-    """
-    批量处理音频文件
-
-    参数:
-        input_dir (str): 输入目录路径
-        output_dir (str): 输出目录路径
-    """
-    # 支持的音频格式
-    supported_formats = ('.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac')
-
-    # 收集所有音频文件
-    audio_files = []
-    for root, _, files in os.walk(input_dir):
-        for file in files:
-            if file.lower().endswith(supported_formats):
-                audio_files.append(os.path.join(root, file))
-
-    if not audio_files:
-        messagebox.showwarning("警告", "所选目录中没有找到支持的音频文件!")
-        return
-
-    # 创建输出目录
-    os.makedirs(output_dir, exist_ok=True)
-
-    # 使用进度条处理文件
-    success_count = 0
-    error_messages = []
-
-    for audio_file in tqdm(audio_files, desc="正在生成频谱图", unit="文件"):
-        success, result = plot_spectrogram_2d(audio_file, output_dir)
-        if success:
-            success_count += 1
-        else:
-            error_messages.append(result)
-
-    # 显示处理结果
-    result_message = f"处理完成!\n\n成功处理: {success_count} 个文件"
-    if error_messages:
-        result_message += f"\n失败: {len(error_messages)} 个文件\n\n错误详情已保存到日志文件"
-
-        # 保存错误日志
-        log_path = os.path.join(output_dir, "processing_errors.log")
-        with open(log_path, 'w', encoding='utf-8') as f:
-            f.write("\n".join(error_messages))
-
-    messagebox.showinfo("处理结果", result_message)
-
-    # 完成后打开输出文件夹
-    if os.name == 'nt':  # Windows
-        os.startfile(output_dir)
-    elif os.name == 'posix':  # macOS/Linux
-        os.system(f'open "{output_dir}"' if sys.platform == 'darwin' else f'xdg-open "{output_dir}"')
-
-
-def select_directory_2d(title):
-    """
-    弹出文件夹选择对话框
-    """
+def select_directory(title="选择文件夹", initialdir=None):
+    """弹出文件夹选择对话框"""
     root = Tk()
-    root.withdraw()  # 隐藏主窗口
-    folder = filedialog.askdirectory(title=title)
+    root.withdraw()
+    folder = filedialog.askdirectory(title=title, initialdir=initialdir)
+    root.destroy()
     return folder if folder else None
 
 
@@ -250,70 +193,7 @@ def plot_spectrogram_3d(file_path, output_dir):
     except Exception as e:
         return False, f"{file_path}: {e}"
 
-def batch_process_audio_3d(input_dir, output_dir):
-    supported_formats = ('.wav', '.wave', '.aiff', '.flac')
-    
-    audio_files =[]
-    for root, _,files in os.walk(input_dir):
-        for file in files:
-            if file.lower().endswith(supported_formats):
-                audio_files.append(os.path.join(root, file))
-    
-    if not audio_files:
-        messagebox.showwarning("警告", "未找到支持的音频文件")
-        return
-    
-    os.makedirs(output_dir, exist_ok=True)
 
-    # 使用进度条处理文件
-    success_count = 0
-    error_messages = []
-
-    for audio_file in tqdm(audio_files, desc="正在生成3D频谱图", unit="文件"):
-        success, result = plot_spectrogram_3d(audio_file, output_dir)
-        if success:
-            success_count += 1
-        else:
-            error_messages.append(result)
-
-    # 显示处理结果
-    result_message = f"处理完成!\n\n成功处理: {success_count} 个文件"
-    if error_messages:
-        result_message += f"\n失败: {len(error_messages)} 个文件\n\n错误详情已保存到日志文件"
-
-        # 保存错误日志
-        log_path = os.path.join(output_dir, "processing_errors.log")
-        with open(log_path, 'w', encoding='utf-8') as f:
-            f.write("\n".join(error_messages))
-
-    messagebox.showinfo("处理结果", result_message)
-
-    # 完成后打开输出文件夹
-    if os.name == 'nt':  # Windows
-        os.startfile(output_dir)
-    elif os.name == 'posix':  # macOS/Linux
-        os.system(f'open "{output_dir}"' if sys.platform == 'darwin' else f'xdg-open "{output_dir}"')
-
-
-
-
-def select_directory_3d(title="选择文件夹", initialdir=None):
-    root = Tk()
-    root.withdraw()  # 隐藏主窗口
-    folder_path = filedialog.askdirectory(title=title, initialdir=initialdir)
-    root.destroy()
-    return folder_path if folder_path else None
-    
-    
-def select_directory_centroid(title="选择文件夹", initialdir=None):
-    """
-    弹出文件夹选择对话框（频谱质心分析用）
-    """
-    root = Tk()
-    root.withdraw()  # 隐藏主窗口
-    folder_path = filedialog.askdirectory(title=title, initialdir=initialdir)
-    root.destroy()
-    return folder_path if folder_path else None
 
 
 def analyze_audio_file_centroid(audio_path, output_dir):
@@ -388,56 +268,4 @@ def analyze_audio_file_centroid(audio_path, output_dir):
         error_msg = f"处理文件 {audio_path} 时出错: {str(e)}"
         print(error_msg)
         return False, error_msg
-
-
-def batch_analyze_audio_centroid(input_dir, output_dir):
-
-
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-
-    audio_extensions = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac']
-
-
-    audio_files = []
-    for root, _, files in os.walk(input_dir):
-        for file in files:
-            if Path(file).suffix.lower() in audio_extensions:
-                audio_files.append(os.path.join(root, file))
-
-    if not audio_files:
-        messagebox.showwarning("警告", "未找到任何支持的音频文件 (.wav, .mp3, .flac, .ogg, .m4a, .aac)")
-        return
-
-
-
-    success_count = 0
-    error_messages = []
-
-    for audio_file in tqdm(audio_files, desc="正在生成频谱质心分析", unit="文件"):
-        success, result = analyze_audio_file_centroid(audio_file, output_dir)
-        if success:
-            success_count += 1
-        else:
-            error_messages.append(result)
-
-    # 显示处理结果
-    result_message = f"处理完成!\n\n成功处理: {success_count} 个文件"
-    if error_messages:
-        result_message += f"\n失败: {len(error_messages)} 个文件\n\n错误详情已保存到日志文件"
-
-        # 保存错误日志
-        log_path = os.path.join(output_dir, "processing_errors.log")
-        with open(log_path, 'w', encoding='utf-8') as f:
-            f.write("\n".join(error_messages))
-
-    messagebox.showinfo("处理结果", result_message)
-
-    # 完成后打开输出文件夹
-    if os.name == 'nt':  # Windows
-        os.startfile(output_dir)
-    elif os.name == 'posix':  # macOS/Linux
-        os.system(f'open "{output_dir}"' if sys.platform == 'darwin' else f'xdg-open "{output_dir}"')
-    
-    
     
