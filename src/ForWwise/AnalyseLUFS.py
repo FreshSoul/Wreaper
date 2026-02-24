@@ -46,7 +46,7 @@ def analyze_loudness_detailed(audio_file_path, window_size=0.4, overlap=0.5):
 def get_audio_sources():
     try:
         with WaapiClient() as client:
-            # 1) 获取当前选择
+            # 获取当前选择
             result = client.call("ak.wwise.ui.getSelectedObjects")
             selected = result.get('objects', []) if result else []
             if not selected:
@@ -55,14 +55,14 @@ def get_audio_sources():
 
             ids = [obj['id'] for obj in selected]
 
-            # 2) 取“选中对象自身”的信息
+            # 取“选中对象自身”的信息
             selected_info = client.call("ak.wwise.core.object.get", {
                 "from": {"id": ids},
                 "options": {"return": ["id", "name", "type", "path"]}
             })
             selected_objects = (selected_info or {}).get('return', [])
 
-            # 3) 取“选中对象的所有后代”的信息
+            # 取“选中对象的所有后代”的信息
             descendants_info = client.call("ak.wwise.core.object.get", {
                 "from": {"id": ids},
                 "transform": [{"select": ["descendants"]}],
@@ -73,12 +73,12 @@ def get_audio_sources():
             # 合并自身 + 后代
             all_objects = selected_objects + descendants_objects
 
-            # 4) 过滤音频源
+            # 过滤音频源
             audio_sources = [obj for obj in all_objects if obj.get('type') == 'AudioFileSource']
 
             audio_files = []
             for audio in audio_sources:
-                # 5) 拉取源自身属性（含原始文件路径、OutputBus 引用）
+                # 拉取源自身属性（含原始文件路径、OutputBus 引用）
                 props = client.call("ak.wwise.core.object.get", {
                     "from": {"id": [audio['id']]},
                     "options": {"return": ["originalWavFilePath", "name", "path", "duration", "OutputBus"]}
@@ -95,7 +95,7 @@ def get_audio_sources():
                     
 
 
-                    # 6) ancestors 列表（含每级 @Volume、@MakeUpGain、@OutputBus），用于层级列与 Output Bus 继承回退
+                    # ancestors 列表（含每级 @Volume、@MakeUpGain、@OutputBus），用于层级列与 Output Bus 继承回退
                     ancestors_props = client.call("ak.wwise.core.object.get", {
                         "from": {"id": [audio['id']]},
                         "transform": [{"select": ["ancestors"]}],
@@ -120,7 +120,7 @@ def get_audio_sources():
                                 bus_id = anc_bus_id
                                 break
 
-                     # 7) 查询目标 Bus 的 BusVolume 与 Volume
+                     # 查询目标 Bus 的 BusVolume 与 Volume
                     bus_bus_volume = None
                     bus_volume = None
                     if bus_id:

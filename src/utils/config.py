@@ -9,5 +9,5 @@ VERSION_FILE_URL = "https://raw.githubusercontent.com/FreshSoul/Wreaper/main/ver
 
 GITHUB_OWNER = "FreshSoul"
 GITHUB_REPO = "Wreaper"
-RELEASE_ASSET_EXE = "Wreaper.exe"  # 你在 Release 里上传的文件名
+RELEASE_ASSET_EXE = "Wreaper.exe"  #  Release 里上传的文件名
 TAG_PREFIX = "v"  # Release 的 tag 形如 v1.1.0，则保持为 "v"；若用 1.1.0，则设为 ""。

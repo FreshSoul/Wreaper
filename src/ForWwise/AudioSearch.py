@@ -1,7 +1,7 @@
 import requests
 import os
 
-BING_API_KEY = 'YOUR_BING_API_KEY'  # 替换为你的Bing API Key
+BING_API_KEY = 'YOUR_BING_API_KEY'  
 SEARCH_URL = "https://api.bing.microsoft.com/v7.0/search"
 DOWNLOAD_DIR = "downloaded_audios"
 

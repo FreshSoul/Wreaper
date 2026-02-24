@@ -19,7 +19,7 @@ class Updater:
         try:
             return parse(remote_version) > parse(local_version)
         except Exception:
-            # 容错：非严格语义时，内容不同也算新版本
+            
             return local_version != remote_version
 
     @staticmethod

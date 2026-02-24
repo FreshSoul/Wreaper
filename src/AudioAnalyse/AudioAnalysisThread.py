@@ -6,7 +6,7 @@ import csv
 from concurrent.futures import ProcessPoolExecutor, as_completed
 class AudioAnalysisThread(QThread):
     """音频分析后台线程"""
-    progress = pyqtSignal(int)  # 进度信号 (0-100)
+    progress = pyqtSignal(int)  # 进度信号
     status_update = pyqtSignal(str)  # 状态更新信号
     finished_ok = pyqtSignal(str)  # 成功完成信号
     failed = pyqtSignal(str)  # 失败信号
@@ -171,7 +171,7 @@ class LufsAnalysisThread(QThread):
                     if error or integrated is None:
                         failed_files.append((audio['file_path'], error or "未知错误"))
                     else:
-                        # 组装row（和你原来的逻辑一致）
+                        # 组装row
                         row = {
                             "name": audio['name'],
                             "wwise_path": audio['wwise_path'],

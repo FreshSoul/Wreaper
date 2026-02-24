@@ -26,8 +26,8 @@ from utils.update_runner import replace_and_restart
 from AudioAnalyse.AudioAnalysisThread import AudioAnalysisThread, LufsAnalysisThread
 from ForWwise.LoudnessReport import show_loudness_report
 
-rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
-rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+rcParams['font.sans-serif'] = ['SimHei']  
+rcParams['axes.unicode_minus'] = False  
 
 class GetAudioSourcesThread(QThread):
     finished_ok = pyqtSignal(list)
@@ -37,7 +37,6 @@ class GetAudioSourcesThread(QThread):
 
     def run(self):
         try:
-            # 关键：为当前线程创建事件循环
             try:
                 asyncio.set_event_loop(asyncio.new_event_loop())
             except Exception:
@@ -71,7 +70,7 @@ class GetSelectedFilesThread(QThread):
             self.failed.emit(str(e))
 
 class Wreaper(QWidget):
-    # 前端（UI）
+    """# 前端"""
     def __init__(self):
         super().__init__()
         self.settings = QSettings("Wreaper", "WreaperApp")
@@ -104,7 +103,7 @@ class Wreaper(QWidget):
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
 
-        # 菜单栏（放在页边框上）
+        # 菜单栏
         menubar = QMenuBar(self)
         menu = menubar.addMenu("功能")
         act_config = menu.addAction("配置Reaper启动路径")

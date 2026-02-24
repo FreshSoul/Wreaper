@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['WreaperRel.py'],
+    ['D:\\Wreaper\\src\\WreaperRel.py'],
     pathex=[],
     binaries=[],
-    datas=[('WwiseLogo.png', '.'), ('reaperLogo.jpg', '.'), ('test.jpg', '.'), ('Open.png', '.')],
+    datas=[('D:\\Wreaper\\src\\WwiseLogo.png', '.'), ('D:\\Wreaper\\src\\reaperLogo.jpg', '.'), ('D:\\Wreaper\\src\\test.jpg', '.'), ('D:\\Wreaper\\src\\Open.png', '.')],
     hiddenimports=['reapy', 'numba', 'audioread.ffdec', 'reapy.reascript_api'],
     hookspath=[],
     hooksconfig={},
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['favicon.ico'],
+    icon=['D:\\Wreaper\\src\\favicon.ico'],
 )

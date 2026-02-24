@@ -98,7 +98,7 @@ class LoudnessSearchUI(QWidget):
         self.table = QTableWidget(self)
         self.layout.addWidget(self.table)
         
-        # 右键菜单：复制 wwise_path
+        # 右键：复制
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.on_table_context_menu)
 
@@ -263,7 +263,6 @@ class LoudnessSearchUI(QWidget):
         """加载CSV到报告表格。"""
         self.csv_path = file_path
         try:
-            # 只读取需要的 4 列，并显式指定类型，关闭 low_memory 分块推断
             df = pd.read_csv(
                 file_path,
                 usecols=["LUFS-I-Ingame", "LUFS-M-MAX-Ingame", "name", "wwise_path"],
@@ -942,7 +941,7 @@ class LoudnessSearchUI(QWidget):
             return False
 
     def on_double_click(self, row, col):
-        item = self.table.item(row, 3)  # 第 3 列是 wwise_path
+        item = self.table.item(row, 3)  
         if not item:
             return
         wwise_path = item.text().strip()
@@ -993,7 +992,7 @@ class LoudnessSearchUI(QWidget):
                         )
                         return
 
-                    # 正常操作
+                 
                     client.call("ak.wwise.ui.commands.execute", {
                         "command": "FindInProjectExplorerSelectionChannel1",
                         "objects": [object_id]
@@ -1009,7 +1008,6 @@ class LoudnessSearchUI(QWidget):
             print("on_double_click异常：", e)
 def show_loudness_report(parent=None):
     win = LoudnessSearchUI()
-    # 不要 setParent，不要继承主窗口样式，只继承字体（可选）
     if parent:
         win.setFont(parent.font())
     win.show()

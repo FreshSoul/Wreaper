@@ -27,18 +27,18 @@ class WwiseService:
         """
         loop = None
         try:
-            # 1) 先做快速端口探测，未开启直接返回友好错误
+            # 先做快速端口探测，未开启直接返回友好错误
             if not self._is_wwise_port_open():
                 raise RuntimeError("无法连接到Wwise，请确保Wwise已启动并启用WAAPI。")
 
-            # 2) 确保当前线程有事件循环（waapi 内部会用到 asyncio）
+            # 确保当前线程有事件循环
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            # 3) 连接并获取选中对象
+            # 连接并获取选中对象
             url = f"ws://{self.host}:{self.port}/waapi"
            
             with WaapiClient(url=url) as client:

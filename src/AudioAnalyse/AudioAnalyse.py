@@ -97,19 +97,19 @@ def process_long_audio_3d(file_path, output_dir, db_range=(-120, 9), chunk_size=
         Sxx_db = 10 * np.log10(Sxx + 1e-12)
         Sxx_db = np.clip(Sxx_db, db_range[0], db_range[1])
 
-        # 1. 强制设置最低频率为20Hz并过滤
+        # 强制设置最低频率为20Hz并过滤
         min_freq = 20
         valid_mask = frequencies >= min_freq
         frequencies = frequencies[valid_mask]
         Sxx_db = Sxx_db[valid_mask, :]
 
-        # 2. 对数变换并重置基准
+        # 对数变换并重置基准
         log_freq = np.log10(frequencies)
-        Y_values = log_freq - np.log10(min_freq)  # 使20Hz对应Y=0
+        Y_values = log_freq - np.log10(min_freq)  
 
-        # 3. 确保最低点正好在基底上
-        Y_values = np.maximum(Y_values, 0)  # 强制非负
-        Y_values[0] = 0  # 确保第一个点完全在基底上
+        # 确保最低点正好在基底上
+        Y_values = np.maximum(Y_values, 0)  
+        Y_values[0] = 0  
 
         # 创建3D图
         fig = plt.figure(figsize=(20, 12))
@@ -117,12 +117,12 @@ def process_long_audio_3d(file_path, output_dir, db_range=(-120, 9), chunk_size=
 
         # 降低数据量
         t_stride = max(1, len(times) // 200)
-        f_stride = 1  # 不再对频率下采样，确保基底连接
+        f_stride = 1  
 
         X, Y = np.meshgrid(times[::t_stride], Y_values[::f_stride])
         Z = Sxx_db[::f_stride, ::t_stride]
 
-        # 绘制频谱曲面（确保连接基底）
+        # 绘制频谱曲面
         surf = ax.plot_surface(
             X, Y, Z,
             cmap='inferno',
@@ -135,15 +135,15 @@ def process_long_audio_3d(file_path, output_dir, db_range=(-120, 9), chunk_size=
             edgecolor='none'  # 去除边缘线
         )
 
-        # 4. 精确绘制基底平面（与曲面共享网格）
+        # 精确绘制基底平面
         base_z = np.full_like(Z, db_range[0])
-        base_z[0, :] = Z[0, :]  # 让基底第一行与曲面重合
+        base_z[0, :] = Z[0, :]  
         ax.plot_surface(X, Y * 0, base_z, color='black', alpha=0.3, zorder=0)
 
-        # 5. 强制设置坐标范围
+        # 强制设置坐标范围
         ax.set_zlim(db_range[0], db_range[1])
         ax.set_ylim(0, np.max(Y_values) * 1.05)
-        # === 关键修改结束 ===
+
 
         # 设置坐标轴
         ax.set_xlabel('时间 (分钟)', fontsize=12)

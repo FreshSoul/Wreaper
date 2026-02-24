@@ -35,7 +35,7 @@ class ReaperService:
             if last_end is None:
                 start = rpp.GetMediaItemInfo_Value(item, "D_POSITION")
             else:
-                start = last_end + 1.0  # 上一个区间结束后1秒
+                start = last_end + 1.0  
                 rpp.SetMediaItemInfo_Value(item, "D_POSITION", start)
             end = start + length
             last_end = end

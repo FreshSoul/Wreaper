@@ -10,7 +10,7 @@ def get_selected_object_children_audio_sources():
                 print("未选中任何对象。")
                 return
 
-            # 获取所有子层级对象（递归）
+            # 获取所有子层级对象
             ids = [obj['id'] for obj in selected]
             query = {
                 "from": {"id": ids},
