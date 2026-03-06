@@ -91,7 +91,7 @@ Wreaper/
 ├── src/
 │   ├── WreaperRel.py              # 主程序入口（PyQt5 GUI）
 │   ├── reaperconfig.txt           # Reaper 路径配置
-│   ├── requirements.txt.txt       # Python 依赖
+│   ├── requirements.txt       # Python 依赖
 │   ├── wreaper.spec               # PyInstaller 打包配置
 │   │
 │   ├── backend/                   # 后端服务
